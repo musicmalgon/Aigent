@@ -1,0 +1,375 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "combined_signal_result.schema.json",
+  "title": "CombinedSignalResult",
+  "description": "Assessment, 생활 패턴, 감정 신호를 규칙 기반으로 결합한 비의료적 결과.",
+  "$comment": "examples의 모든 값은 스키마 검증용 합성 결과다. 이 스키마는 진단, 번아웃 확률, 임의 가중치를 포함하지 않는다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "combined_level",
+    "result_type",
+    "reason_codes",
+    "top_factors",
+    "missing_signals",
+    "assessment_summary",
+    "behavior_summary",
+    "emotion_summary",
+    "rule_version"
+  ],
+  "properties": {
+    "combined_level": {
+      "$ref": "#/$defs/combinedLevel"
+    },
+    "result_type": {
+      "$ref": "#/$defs/combinedResultType"
+    },
+    "reason_codes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/reasonCode"
+      }
+    },
+    "top_factors": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S"
+      }
+    },
+    "missing_signals": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/signalType"
+      }
+    },
+    "assessment_summary": {
+      "$ref": "#/$defs/nullableNonEmptyString"
+    },
+    "behavior_summary": {
+      "$ref": "#/$defs/nullableNonEmptyString"
+    },
+    "emotion_summary": {
+      "$ref": "#/$defs/nullableNonEmptyString"
+    },
+    "rule_version": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "combined_level": {
+            "const": "stable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "result_type": {
+            "const": "all_signals_stable"
+          },
+          "reason_codes": {
+            "maxItems": 0
+          },
+          "top_factors": {
+            "maxItems": 0
+          },
+          "missing_signals": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result_type": {
+            "const": "all_signals_stable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "combined_level": {
+            "const": "stable"
+          },
+          "reason_codes": {
+            "maxItems": 0
+          },
+          "top_factors": {
+            "maxItems": 0
+          },
+          "missing_signals": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result_type": {
+            "const": "assessment_elevated_without_recent_change"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "combined_level": {
+            "const": "indeterminate"
+          },
+          "reason_codes": {
+            "allOf": [
+              {
+                "contains": {
+                  "const": "ASSESSMENT_EXHAUSTION_ELEVATED"
+                }
+              },
+              {
+                "contains": {
+                  "const": "SELF_REPORT_ELEVATED_WITHOUT_RECENT_CHANGE"
+                }
+              }
+            ]
+          },
+          "missing_signals": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result_type": {
+            "const": "recent_change_without_assessment_elevation"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "combined_level": {
+            "const": "change_detected"
+          },
+          "missing_signals": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result_type": {
+            "const": "multiple_signals_aligned"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "combined_level": {
+            "const": "change_detected"
+          },
+          "reason_codes": {
+            "contains": {
+              "const": "MULTIPLE_SIGNALS_ALIGNED"
+            }
+          },
+          "missing_signals": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result_type": {
+            "const": "multiple_signals_present"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "combined_level": {
+            "const": "change_detected"
+          },
+          "reason_codes": {
+            "not": {
+              "contains": {
+                "const": "MULTIPLE_SIGNALS_ALIGNED"
+              }
+            }
+          },
+          "missing_signals": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result_type": {
+            "const": "behavior_data_insufficient"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "combined_level": {
+            "const": "indeterminate"
+          },
+          "reason_codes": {
+            "contains": {
+              "const": "BEHAVIOR_DATA_INSUFFICIENT"
+            }
+          },
+          "missing_signals": {
+            "contains": {
+              "const": "behavior"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result_type": {
+            "const": "health_data_not_connected"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "combined_level": {
+            "const": "indeterminate"
+          },
+          "reason_codes": {
+            "contains": {
+              "const": "HEALTH_DATA_NOT_CONNECTED"
+            }
+          },
+          "missing_signals": {
+            "allOf": [
+              {
+                "contains": {
+                  "const": "health"
+                }
+              },
+              {
+                "contains": {
+                  "const": "behavior"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result_type": {
+            "const": "emotion_data_missing"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "combined_level": {
+            "const": "indeterminate"
+          },
+          "reason_codes": {
+            "contains": {
+              "const": "EMOTION_DATA_MISSING"
+            }
+          },
+          "missing_signals": {
+            "contains": {
+              "const": "emotion"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "combinedLevel": {
+      "type": "string",
+      "enum": [
+        "stable",
+        "change_detected",
+        "indeterminate"
+      ]
+    },
+    "combinedResultType": {
+      "type": "string",
+      "enum": [
+        "all_signals_stable",
+        "assessment_elevated_without_recent_change",
+        "recent_change_without_assessment_elevation",
+        "multiple_signals_aligned",
+        "multiple_signals_present",
+        "behavior_data_insufficient",
+        "health_data_not_connected",
+        "emotion_data_missing"
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "enum": [
+        "ASSESSMENT_EXHAUSTION_ELEVATED",
+        "BEHAVIOR_DATA_INSUFFICIENT",
+        "HEALTH_DATA_NOT_CONNECTED",
+        "SLEEP_DECREASE_CONTINUED",
+        "ACTIVITY_DECREASE_CONTINUED",
+        "REST_DECREASE_CONTINUED",
+        "FATIGUE_EXPRESSION_REPEATED",
+        "ANXIETY_EXPRESSION_REPEATED",
+        "EMOTION_DATA_MISSING",
+        "NEW_PATTERN_CHANGE",
+        "MULTIPLE_SIGNALS_ALIGNED",
+        "SELF_REPORT_ELEVATED_WITHOUT_RECENT_CHANGE"
+      ]
+    },
+    "signalType": {
+      "type": "string",
+      "enum": [
+        "assessment",
+        "behavior",
+        "emotion",
+        "health"
+      ]
+    },
+    "nullableNonEmptyString": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "pattern": "\\S"
+    }
+  },
+  "examples": [
+    {
+      "combined_level": "stable",
+      "result_type": "all_signals_stable",
+      "reason_codes": [],
+      "top_factors": [],
+      "missing_signals": [],
+      "assessment_summary": "합성 초기 자가 보고 기준점이 저장되어 있습니다.",
+      "behavior_summary": "합성 기록에서 비교 기간의 두드러진 변화가 없습니다.",
+      "emotion_summary": "합성 일기 분석의 주 감정은 stable입니다.",
+      "rule_version": "foundation-draft"
+    }
+  ]
+}

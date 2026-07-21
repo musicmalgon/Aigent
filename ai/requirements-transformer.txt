@@ -1,0 +1,4 @@
+# Optional CPU inference environment for the offline Transformer analyzer.
+-r requirements.txt
+torch>=2.2,<3
+transformers>=4.46,<5

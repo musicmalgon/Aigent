@@ -1,0 +1,49 @@
+# Local datasets
+emotional-dialogue/
+**/original/
+**/label/
+*.xlsx
+
+# AI outputs
+ai/data/outputs/
+ai/data/reports/
+
+# Model artifacts
+*.joblib
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Editor and local files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.tmp
+*.log
+
+# macOS
+.DS_Store

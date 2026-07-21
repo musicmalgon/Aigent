@@ -1,5 +1,9 @@
 # Re:Mind AI
 
+> The six-class coarse-emotion runtime and API are documented in
+> [`docs/coarse_emotion_inference.md`](docs/coarse_emotion_inference.md). The
+> existing four-label `EmotionAnalysis` contract remains supported.
+
 Re:Mind AI 파트는 초기 자가 보고 결과를 고정 기준점으로 보관하면서 개인별
 생활 변화와 감정 일기 분석 결과를 결합할 수 있는 데이터 계약과 분석
 인터페이스를 담당합니다. 이 모듈은 의료적 판단이나 진단을 제공하지 않습니다.

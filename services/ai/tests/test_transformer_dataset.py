@@ -11,6 +11,7 @@ from ai.src.remind_ai.data.transformer_dataset import (
     TokenizedEmotionDataset,
     TransformerDatasetError,
     build_label_encoding,
+    transformer_inference_text,
     transformer_text,
 )
 
@@ -93,3 +94,13 @@ def test_empty_input_and_missing_separator_fail_safely() -> None:
     tokenizer.sep_token = None  # type: ignore[assignment]
     with pytest.raises(TransformerDatasetError):
         TokenizedEmotionDataset([blank], tokenizer, labels)
+
+
+def test_inference_turns_match_training_text_preprocessing() -> None:
+    sample = sample_from_record(_record(" PRIVATE   THIRD TURN "), "synthetic")
+    assert transformer_inference_text(
+        " PRIVATE   FIRST TURN ",
+        "PRIVATE SECOND TURN",
+        " PRIVATE   THIRD TURN ",
+        "[SEP]",
+    ) == transformer_text(sample, "[SEP]")

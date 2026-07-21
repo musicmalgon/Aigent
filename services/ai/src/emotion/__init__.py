@@ -16,6 +16,8 @@ from .base import (
     PredictionExecutionError,
     PredictionOutputError,
 )
+from .coarse_settings import CoarseEmotionSettings
+from .coarse_transformer import CoarseTransformerEmotionAnalyzer
 from .tfidf_analyzer import TFIDFEmotionAnalyzer, TfidfEmotionAnalyzer
 from .transformer_analyzer import TransformerEmotionAnalyzer
 
@@ -34,6 +36,8 @@ __all__ = [
     "PredictionError",
     "PredictionExecutionError",
     "PredictionOutputError",
+    "CoarseEmotionSettings",
+    "CoarseTransformerEmotionAnalyzer",
     "TFIDFEmotionAnalyzer",
     "TfidfEmotionAnalyzer",
     "TransformerEmotionAnalyzer",

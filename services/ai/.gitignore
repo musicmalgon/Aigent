@@ -9,11 +9,27 @@ htmlcov/
 # Local model artifacts and experiment outputs
 /models/
 /artifacts/
+data/*
+!data/evaluation/
+!data/evaluation/**
+!data/synthetic/
+!data/synthetic/**
+!data/raw/
+!data/processed/
+data/outputs/
+data/reports/
+**/outputs/
+**/checkpoints/
+**/models/
 *.joblib
 *.pkl
 *.pt
 *.pth
 *.safetensors
+*.bin
+predictions*.jsonl
+predictions*.csv
+**/.cache/
 
 # Raw or locally processed datasets must not be committed.
 data/raw/*

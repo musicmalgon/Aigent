@@ -8,6 +8,8 @@ not calculate assessment scores or define medical thresholds.
 from __future__ import annotations
 
 import re
+import math
+import unicodedata
 from collections.abc import Mapping
 from datetime import date, time
 from enum import Enum
@@ -149,6 +151,27 @@ class EmotionLabel(str, Enum):
     FATIGUE = "fatigue"
     ANXIETY = "anxiety"
     OTHER = "other"
+
+
+class CoarseEmotionLabel(str, Enum):
+    JOY = "기쁨"
+    ANXIETY = "불안"
+    EMBARRASSMENT = "당황"
+    ANGER = "분노"
+    SADNESS = "슬픔"
+    HURT = "상처"
+
+
+COARSE_EMOTION_LABELS = tuple(CoarseEmotionLabel)
+COARSE_EMOTION_LABEL_TO_ID = {
+    label: index for index, label in enumerate(COARSE_EMOTION_LABELS)
+}
+
+
+class UncertaintyReason(str, Enum):
+    LOW_CONFIDENCE = "low_confidence"
+    SMALL_MARGIN = "small_margin"
+    LOW_CONFIDENCE_AND_SMALL_MARGIN = "low_confidence_and_small_margin"
 
 
 class CauseTag(str, Enum):
@@ -468,6 +491,114 @@ class EmotionAnalysis(_SchemaModel):
         return self
 
 
+def _normalize_utterance(value: object, *, optional: bool) -> str | None:
+    if value is None and optional:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("utterances must be strings")
+    normalized = re.sub(r"\s+", " ", unicodedata.normalize("NFC", value).strip())
+    if not normalized:
+        if optional:
+            return None
+        raise ValueError("required utterances must not be empty")
+    return normalized
+
+
+class CoarseEmotionInput(_SchemaModel):
+    """Up to three user turns matching the coarse model training input."""
+
+    hs01: Annotated[str, Field(min_length=1, max_length=2000)]
+    hs02: Annotated[str, Field(min_length=1, max_length=2000)]
+    hs03: Annotated[str, Field(min_length=1, max_length=2000)] | None = None
+
+    @field_validator("hs01", "hs02", mode="before")
+    @classmethod
+    def normalize_required_utterance(cls, value: object) -> str:
+        normalized = _normalize_utterance(value, optional=False)
+        assert isinstance(normalized, str)
+        return normalized
+
+    @field_validator("hs03", mode="before")
+    @classmethod
+    def normalize_optional_utterance(cls, value: object) -> str | None:
+        return _normalize_utterance(value, optional=True)
+
+
+class CoarseEmotionTopPrediction(_SchemaModel):
+    emotion: CoarseEmotionLabel
+    label_id: Annotated[JsonInteger, Field(ge=0, le=5)]
+    probability: Confidence
+
+    @model_validator(mode="after")
+    def validate_label_id(self) -> "CoarseEmotionTopPrediction":
+        if self.label_id != COARSE_EMOTION_LABEL_TO_ID[self.emotion]:
+            raise ValueError("label_id does not match emotion")
+        return self
+
+
+class CoarseEmotionInferenceResponse(_SchemaModel):
+    """Non-diagnostic six-class model output suitable for trend aggregation."""
+
+    model_version: NonEmptyString
+    predicted_emotion: CoarseEmotionLabel
+    predicted_label_id: Annotated[JsonInteger, Field(ge=0, le=5)]
+    confidence: Confidence
+    is_uncertain: StrictBool
+    uncertainty_reason: UncertaintyReason | None
+    probabilities: Annotated[
+        dict[CoarseEmotionLabel, Confidence],
+        Field(min_length=6, max_length=6),
+    ]
+    top_predictions: Annotated[
+        list[CoarseEmotionTopPrediction],
+        Field(min_length=1, max_length=6),
+    ]
+    latency_ms: NonNegativeFloat
+
+    @model_validator(mode="after")
+    def validate_prediction_consistency(self) -> "CoarseEmotionInferenceResponse":
+        if set(self.probabilities) != set(COARSE_EMOTION_LABELS):
+            raise ValueError("probabilities must contain exactly the six coarse labels")
+        probability_sum = sum(self.probabilities.values())
+        if not math.isclose(probability_sum, 1.0, rel_tol=0.0, abs_tol=1e-6):
+            raise ValueError("probabilities must sum to one")
+
+        ordered = sorted(
+            self.probabilities.items(),
+            key=lambda item: (-item[1], COARSE_EMOTION_LABEL_TO_ID[item[0]]),
+        )
+        winner, winner_probability = ordered[0]
+        if self.predicted_emotion is not winner:
+            raise ValueError("predicted_emotion must be the maximum probability label")
+        if self.predicted_label_id != COARSE_EMOTION_LABEL_TO_ID[winner]:
+            raise ValueError("predicted_label_id does not match predicted_emotion")
+        if not math.isclose(
+            self.confidence,
+            winner_probability,
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        ):
+            raise ValueError("confidence must equal the maximum probability")
+
+        if len({item.emotion for item in self.top_predictions}) != len(
+            self.top_predictions
+        ):
+            raise ValueError("top_predictions must not contain duplicates")
+        for index, prediction in enumerate(self.top_predictions):
+            expected_label, expected_probability = ordered[index]
+            if prediction.emotion is not expected_label or not math.isclose(
+                prediction.probability,
+                expected_probability,
+                rel_tol=0.0,
+                abs_tol=1e-6,
+            ):
+                raise ValueError("top_predictions must be sorted by probability")
+
+        if self.is_uncertain != (self.uncertainty_reason is not None):
+            raise ValueError("uncertainty_reason must match is_uncertain")
+        return self
+
+
 class PatternFactor(_SchemaModel):
     """One descriptive factor contributing to an observed pattern change."""
 
@@ -648,6 +779,10 @@ __all__ = [
     "CombinedLevel",
     "CombinedResultType",
     "CombinedSignalResult",
+    "CoarseEmotionInferenceResponse",
+    "CoarseEmotionInput",
+    "CoarseEmotionLabel",
+    "CoarseEmotionTopPrediction",
     "DataCoverage",
     "DataSource",
     "DataSufficiency",
@@ -661,4 +796,5 @@ __all__ = [
     "ReasonCode",
     "SignalType",
     "TargetGroup",
+    "UncertaintyReason",
 ]

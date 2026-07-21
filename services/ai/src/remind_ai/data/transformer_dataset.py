@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from .emotion_dataset import EmotionSample, TURN_SEPARATOR
+from .emotion_dataset import EmotionSample, TURN_SEPARATOR, normalize_text
 
 
 class TransformerDatasetError(ValueError):
@@ -41,16 +41,43 @@ def build_label_encoding(samples: Sequence[EmotionSample]) -> LabelEncoding:
     )
 
 
+def _join_transformer_turns(turns: Sequence[str], sep_token: str) -> str:
+    if not isinstance(sep_token, str) or not sep_token.strip():
+        raise TransformerDatasetError("the tokenizer separator token is unavailable")
+    normalized_turns = [normalize_text(turn) for turn in turns]
+    normalized_turns = [turn for turn in normalized_turns if turn]
+    if not normalized_turns:
+        raise TransformerDatasetError("approved user utterance text is empty")
+    return f" {sep_token.strip()} ".join(normalized_turns)
+
+
 def transformer_text(sample: EmotionSample, sep_token: str) -> str:
     """Replace the internal turn marker with the selected tokenizer separator."""
 
-    if not isinstance(sep_token, str) or not sep_token.strip():
-        raise TransformerDatasetError("the tokenizer separator token is unavailable")
-    turns = [turn.strip() for turn in sample.text.split(TURN_SEPARATOR)]
-    turns = [turn for turn in turns if turn]
-    if not turns:
-        raise TransformerDatasetError("approved user utterance text is empty")
-    return f" {sep_token.strip()} ".join(turns)
+    return _join_transformer_turns(sample.text.split(TURN_SEPARATOR), sep_token)
+
+
+def transformer_inference_text(
+    hs01: str,
+    hs02: str,
+    hs03: str | None,
+    sep_token: str,
+) -> str:
+    """Apply the training-time turn normalization and tokenizer separator."""
+
+    required = (("HS01", hs01), ("HS02", hs02))
+    normalized: list[str] = []
+    for name, value in required:
+        if not isinstance(value, str) or not normalize_text(value):
+            raise TransformerDatasetError(f"{name} must be a non-empty string")
+        normalized.append(normalize_text(value))
+    if hs03 is not None:
+        if not isinstance(hs03, str):
+            raise TransformerDatasetError("HS03 must be a string or null")
+        optional = normalize_text(hs03)
+        if optional:
+            normalized.append(optional)
+    return _join_transformer_turns(normalized, sep_token)
 
 
 class TokenizedEmotionDataset:

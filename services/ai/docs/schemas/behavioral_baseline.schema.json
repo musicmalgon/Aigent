@@ -1,0 +1,1786 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "behavioral_baseline.schema.json",
+  "title": "BehavioralBaseline",
+  "description": "개인 생활 기록의 기술 통계 기준선과 지표별 데이터 충분도.",
+  "$comment": "examples의 모든 값은 스키마 검증용 합성 데이터이며 의료 기준이나 확정 임계값을 나타내지 않는다. 날짜 구간 길이 및 서로 다른 필드의 동적 숫자 비교는 표준 JSON Schema만으로 표현하지 않고 Pydantic 계약에서 추가 검증한다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "baseline_start",
+    "baseline_end",
+    "valid_days",
+    "valid_days_by_metric",
+    "minimum_required_days",
+    "sufficiency_by_metric",
+    "data_sufficiency",
+    "averages",
+    "medians",
+    "weekday_averages",
+    "weekend_averages",
+    "calculation_version"
+  ],
+  "properties": {
+    "baseline_start": {
+      "type": "string",
+      "format": "date"
+    },
+    "baseline_end": {
+      "type": "string",
+      "format": "date"
+    },
+    "valid_days": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "기간 중 하나 이상의 행동 데이터가 존재한 날짜 수."
+    },
+    "valid_days_by_metric": {
+      "$ref": "#/$defs/metricValidDays"
+    },
+    "minimum_required_days": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "전체 결과에 적용되는 초기 후보값. 지표별 최소 일수는 TODO다."
+    },
+    "sufficiency_by_metric": {
+      "$ref": "#/$defs/metricSufficiencyMap"
+    },
+    "data_sufficiency": {
+      "$ref": "#/$defs/dataSufficiency"
+    },
+    "averages": {
+      "$ref": "#/$defs/metricValues"
+    },
+    "medians": {
+      "$ref": "#/$defs/metricValues"
+    },
+    "weekday_averages": {
+      "$ref": "#/$defs/metricValues"
+    },
+    "weekend_averages": {
+      "$ref": "#/$defs/metricValues"
+    },
+    "calculation_version": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "description": "기준선 집계 정책과 구현을 재현하기 위한 명시적 버전."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "data_sufficiency": {
+            "const": "sufficient"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "valid_days": {
+            "minimum": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "data_sufficiency": {
+            "const": "unavailable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "valid_days": {
+            "const": 0
+          }
+        }
+      }
+    },
+    {
+      "$ref": "#/$defs/sleepMinutesMetadataPair"
+    },
+    {
+      "$ref": "#/$defs/stepsMetadataPair"
+    },
+    {
+      "$ref": "#/$defs/activeMinutesMetadataPair"
+    },
+    {
+      "$ref": "#/$defs/exerciseMinutesMetadataPair"
+    },
+    {
+      "$ref": "#/$defs/workOrStudyMinutesMetadataPair"
+    },
+    {
+      "$ref": "#/$defs/restMinutesMetadataPair"
+    },
+    {
+      "$ref": "#/$defs/scheduleCountMetadataPair"
+    },
+    {
+      "$ref": "#/$defs/subjectiveFatigueMetadataPair"
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "not": {
+              "required": [
+                "sleep_minutes"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "not": {
+              "required": [
+                "sleep_minutes"
+              ]
+            }
+          },
+          "medians": {
+            "not": {
+              "required": [
+                "sleep_minutes"
+              ]
+            }
+          },
+          "weekday_averages": {
+            "not": {
+              "required": [
+                "sleep_minutes"
+              ]
+            }
+          },
+          "weekend_averages": {
+            "not": {
+              "required": [
+                "sleep_minutes"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "properties": {
+              "sleep_minutes": {
+                "const": 0
+              }
+            },
+            "required": [
+              "sleep_minutes"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "properties": {
+              "sleep_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "medians": {
+            "properties": {
+              "sleep_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "weekday_averages": {
+            "properties": {
+              "sleep_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "weekend_averages": {
+            "properties": {
+              "sleep_minutes": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "not": {
+              "required": [
+                "steps"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "not": {
+              "required": [
+                "steps"
+              ]
+            }
+          },
+          "medians": {
+            "not": {
+              "required": [
+                "steps"
+              ]
+            }
+          },
+          "weekday_averages": {
+            "not": {
+              "required": [
+                "steps"
+              ]
+            }
+          },
+          "weekend_averages": {
+            "not": {
+              "required": [
+                "steps"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "properties": {
+              "steps": {
+                "const": 0
+              }
+            },
+            "required": [
+              "steps"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "properties": {
+              "steps": {
+                "type": "null"
+              }
+            }
+          },
+          "medians": {
+            "properties": {
+              "steps": {
+                "type": "null"
+              }
+            }
+          },
+          "weekday_averages": {
+            "properties": {
+              "steps": {
+                "type": "null"
+              }
+            }
+          },
+          "weekend_averages": {
+            "properties": {
+              "steps": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "not": {
+              "required": [
+                "active_minutes"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "not": {
+              "required": [
+                "active_minutes"
+              ]
+            }
+          },
+          "medians": {
+            "not": {
+              "required": [
+                "active_minutes"
+              ]
+            }
+          },
+          "weekday_averages": {
+            "not": {
+              "required": [
+                "active_minutes"
+              ]
+            }
+          },
+          "weekend_averages": {
+            "not": {
+              "required": [
+                "active_minutes"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "properties": {
+              "active_minutes": {
+                "const": 0
+              }
+            },
+            "required": [
+              "active_minutes"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "properties": {
+              "active_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "medians": {
+            "properties": {
+              "active_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "weekday_averages": {
+            "properties": {
+              "active_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "weekend_averages": {
+            "properties": {
+              "active_minutes": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "not": {
+              "required": [
+                "exercise_minutes"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "not": {
+              "required": [
+                "exercise_minutes"
+              ]
+            }
+          },
+          "medians": {
+            "not": {
+              "required": [
+                "exercise_minutes"
+              ]
+            }
+          },
+          "weekday_averages": {
+            "not": {
+              "required": [
+                "exercise_minutes"
+              ]
+            }
+          },
+          "weekend_averages": {
+            "not": {
+              "required": [
+                "exercise_minutes"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "properties": {
+              "exercise_minutes": {
+                "const": 0
+              }
+            },
+            "required": [
+              "exercise_minutes"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "properties": {
+              "exercise_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "medians": {
+            "properties": {
+              "exercise_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "weekday_averages": {
+            "properties": {
+              "exercise_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "weekend_averages": {
+            "properties": {
+              "exercise_minutes": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "not": {
+              "required": [
+                "work_or_study_minutes"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "not": {
+              "required": [
+                "work_or_study_minutes"
+              ]
+            }
+          },
+          "medians": {
+            "not": {
+              "required": [
+                "work_or_study_minutes"
+              ]
+            }
+          },
+          "weekday_averages": {
+            "not": {
+              "required": [
+                "work_or_study_minutes"
+              ]
+            }
+          },
+          "weekend_averages": {
+            "not": {
+              "required": [
+                "work_or_study_minutes"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "properties": {
+              "work_or_study_minutes": {
+                "const": 0
+              }
+            },
+            "required": [
+              "work_or_study_minutes"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "properties": {
+              "work_or_study_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "medians": {
+            "properties": {
+              "work_or_study_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "weekday_averages": {
+            "properties": {
+              "work_or_study_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "weekend_averages": {
+            "properties": {
+              "work_or_study_minutes": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "not": {
+              "required": [
+                "rest_minutes"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "not": {
+              "required": [
+                "rest_minutes"
+              ]
+            }
+          },
+          "medians": {
+            "not": {
+              "required": [
+                "rest_minutes"
+              ]
+            }
+          },
+          "weekday_averages": {
+            "not": {
+              "required": [
+                "rest_minutes"
+              ]
+            }
+          },
+          "weekend_averages": {
+            "not": {
+              "required": [
+                "rest_minutes"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "properties": {
+              "rest_minutes": {
+                "const": 0
+              }
+            },
+            "required": [
+              "rest_minutes"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "properties": {
+              "rest_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "medians": {
+            "properties": {
+              "rest_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "weekday_averages": {
+            "properties": {
+              "rest_minutes": {
+                "type": "null"
+              }
+            }
+          },
+          "weekend_averages": {
+            "properties": {
+              "rest_minutes": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "not": {
+              "required": [
+                "schedule_count"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "not": {
+              "required": [
+                "schedule_count"
+              ]
+            }
+          },
+          "medians": {
+            "not": {
+              "required": [
+                "schedule_count"
+              ]
+            }
+          },
+          "weekday_averages": {
+            "not": {
+              "required": [
+                "schedule_count"
+              ]
+            }
+          },
+          "weekend_averages": {
+            "not": {
+              "required": [
+                "schedule_count"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "properties": {
+              "schedule_count": {
+                "const": 0
+              }
+            },
+            "required": [
+              "schedule_count"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "properties": {
+              "schedule_count": {
+                "type": "null"
+              }
+            }
+          },
+          "medians": {
+            "properties": {
+              "schedule_count": {
+                "type": "null"
+              }
+            }
+          },
+          "weekday_averages": {
+            "properties": {
+              "schedule_count": {
+                "type": "null"
+              }
+            }
+          },
+          "weekend_averages": {
+            "properties": {
+              "schedule_count": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "not": {
+              "required": [
+                "subjective_fatigue"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "not": {
+              "required": [
+                "subjective_fatigue"
+              ]
+            }
+          },
+          "medians": {
+            "not": {
+              "required": [
+                "subjective_fatigue"
+              ]
+            }
+          },
+          "weekday_averages": {
+            "not": {
+              "required": [
+                "subjective_fatigue"
+              ]
+            }
+          },
+          "weekend_averages": {
+            "not": {
+              "required": [
+                "subjective_fatigue"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "valid_days_by_metric": {
+            "properties": {
+              "subjective_fatigue": {
+                "const": 0
+              }
+            },
+            "required": [
+              "subjective_fatigue"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "averages": {
+            "properties": {
+              "subjective_fatigue": {
+                "type": "null"
+              }
+            }
+          },
+          "medians": {
+            "properties": {
+              "subjective_fatigue": {
+                "type": "null"
+              }
+            }
+          },
+          "weekday_averages": {
+            "properties": {
+              "subjective_fatigue": {
+                "type": "null"
+              }
+            }
+          },
+          "weekend_averages": {
+            "properties": {
+              "subjective_fatigue": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "dataSufficiency": {
+      "type": "string",
+      "enum": [
+        "sufficient",
+        "insufficient",
+        "unavailable"
+      ]
+    },
+    "metricSufficiency": {
+      "type": "string",
+      "enum": [
+        "sufficient",
+        "partial",
+        "insufficient",
+        "unavailable"
+      ]
+    },
+    "baselineMetric": {
+      "type": "string",
+      "enum": [
+        "sleep_minutes",
+        "steps",
+        "active_minutes",
+        "exercise_minutes",
+        "work_or_study_minutes",
+        "rest_minutes",
+        "schedule_count",
+        "subjective_fatigue"
+      ]
+    },
+    "metricValidDays": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/baselineMetric"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "metricSufficiencyMap": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/baselineMetric"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/metricSufficiency"
+      }
+    },
+    "metricValues": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/baselineMetric"
+      },
+      "additionalProperties": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      }
+    },
+    "sleepMinutesMetadataPair": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "sleep_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "sleep_minutes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "sleep_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "sleep_minutes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "sleep_minutes": {
+                    "const": "unavailable"
+                  }
+                },
+                "required": [
+                  "sleep_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "sleep_minutes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "sleep_minutes": {
+                    "enum": [
+                      "sufficient",
+                      "partial"
+                    ]
+                  }
+                },
+                "required": [
+                  "sleep_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "sleep_minutes": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "stepsMetadataPair": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "steps"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "steps"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "steps"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "steps"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "steps": {
+                    "const": "unavailable"
+                  }
+                },
+                "required": [
+                  "steps"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "steps": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "steps": {
+                    "enum": [
+                      "sufficient",
+                      "partial"
+                    ]
+                  }
+                },
+                "required": [
+                  "steps"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "steps": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "activeMinutesMetadataPair": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "active_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "active_minutes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "active_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "active_minutes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "active_minutes": {
+                    "const": "unavailable"
+                  }
+                },
+                "required": [
+                  "active_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "active_minutes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "active_minutes": {
+                    "enum": [
+                      "sufficient",
+                      "partial"
+                    ]
+                  }
+                },
+                "required": [
+                  "active_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "active_minutes": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "exerciseMinutesMetadataPair": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "exercise_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "exercise_minutes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "exercise_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "exercise_minutes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "exercise_minutes": {
+                    "const": "unavailable"
+                  }
+                },
+                "required": [
+                  "exercise_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "exercise_minutes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "exercise_minutes": {
+                    "enum": [
+                      "sufficient",
+                      "partial"
+                    ]
+                  }
+                },
+                "required": [
+                  "exercise_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "exercise_minutes": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "workOrStudyMinutesMetadataPair": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "work_or_study_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "work_or_study_minutes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "work_or_study_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "work_or_study_minutes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "work_or_study_minutes": {
+                    "const": "unavailable"
+                  }
+                },
+                "required": [
+                  "work_or_study_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "work_or_study_minutes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "work_or_study_minutes": {
+                    "enum": [
+                      "sufficient",
+                      "partial"
+                    ]
+                  }
+                },
+                "required": [
+                  "work_or_study_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "work_or_study_minutes": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "restMinutesMetadataPair": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "rest_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "rest_minutes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "rest_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "rest_minutes"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "rest_minutes": {
+                    "const": "unavailable"
+                  }
+                },
+                "required": [
+                  "rest_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "rest_minutes": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "rest_minutes": {
+                    "enum": [
+                      "sufficient",
+                      "partial"
+                    ]
+                  }
+                },
+                "required": [
+                  "rest_minutes"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "rest_minutes": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "scheduleCountMetadataPair": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "schedule_count"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "schedule_count"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "schedule_count"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "schedule_count"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "schedule_count": {
+                    "const": "unavailable"
+                  }
+                },
+                "required": [
+                  "schedule_count"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "schedule_count": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "schedule_count": {
+                    "enum": [
+                      "sufficient",
+                      "partial"
+                    ]
+                  }
+                },
+                "required": [
+                  "schedule_count"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "schedule_count": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "subjectiveFatigueMetadataPair": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "subjective_fatigue"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "subjective_fatigue"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valid_days_by_metric": {
+                "required": [
+                  "subjective_fatigue"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "required": [
+                  "subjective_fatigue"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "subjective_fatigue": {
+                    "const": "unavailable"
+                  }
+                },
+                "required": [
+                  "subjective_fatigue"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "subjective_fatigue": {
+                    "const": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sufficiency_by_metric": {
+                "properties": {
+                  "subjective_fatigue": {
+                    "enum": [
+                      "sufficient",
+                      "partial"
+                    ]
+                  }
+                },
+                "required": [
+                  "subjective_fatigue"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "valid_days_by_metric": {
+                "properties": {
+                  "subjective_fatigue": {
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "baseline_start": "2026-01-01",
+      "baseline_end": "2026-01-14",
+      "valid_days": 14,
+      "valid_days_by_metric": {
+        "sleep_minutes": 14,
+        "steps": 3,
+        "rest_minutes": 10
+      },
+      "minimum_required_days": 14,
+      "sufficiency_by_metric": {
+        "sleep_minutes": "sufficient",
+        "steps": "insufficient",
+        "rest_minutes": "partial"
+      },
+      "data_sufficiency": "sufficient",
+      "averages": {
+        "sleep_minutes": 430,
+        "steps": 7100,
+        "rest_minutes": 88
+      },
+      "medians": {
+        "sleep_minutes": 432,
+        "steps": 7000,
+        "rest_minutes": 90
+      },
+      "weekday_averages": {
+        "sleep_minutes": 420,
+        "steps": 7300,
+        "rest_minutes": 82
+      },
+      "weekend_averages": {
+        "sleep_minutes": 455,
+        "steps": 6600,
+        "rest_minutes": 103
+      },
+      "calculation_version": "foundation-draft-v1"
+    }
+  ]
+}

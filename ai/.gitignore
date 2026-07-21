@@ -7,8 +7,8 @@ htmlcov/
 .venv/
 
 # Local model artifacts and experiment outputs
-models/
-artifacts/
+/models/
+/artifacts/
 *.joblib
 *.pkl
 *.pt

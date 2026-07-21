@@ -16,7 +16,13 @@ ai/data/reports/
 *.pth
 *.ckpt
 *.safetensors
+*.bin
 *.onnx
+checkpoints/
+
+# Hugging Face local caches and downloads
+.cache/huggingface/
+huggingface/
 
 # Python
 __pycache__/

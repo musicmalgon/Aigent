@@ -80,6 +80,20 @@ def test_label_mapping_is_sorted_and_tokenization_is_truncated_without_padding()
     }
 
 
+def test_explicit_label_order_is_preserved_and_requires_exact_coverage() -> None:
+    samples = [
+        EmotionSample("alpha", "A", "ID-1", "GROUP-1", "synthetic"),
+        EmotionSample("beta", "B", "ID-2", "GROUP-2", "synthetic"),
+    ]
+    labels = build_label_encoding(samples, classes=("B", "A"))
+    assert labels.classes == ("B", "A")
+    assert labels.label2id == {"B": 0, "A": 1}
+    with pytest.raises(TransformerDatasetError, match="do not match"):
+        build_label_encoding(samples, classes=("A", "A"))
+    with pytest.raises(TransformerDatasetError, match="do not match"):
+        build_label_encoding(samples, classes=("A", "C"))
+
+
 def test_empty_input_and_missing_separator_fail_safely() -> None:
     labels = build_label_encoding(
         [

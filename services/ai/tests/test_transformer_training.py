@@ -90,6 +90,21 @@ def test_fit_selects_best_stops_early_and_accumulates_gradients(
     assert result.stopped_early is True
     assert result.optimizer_step_count == 3
     assert (tmp_path / "checkpoints" / "best").is_dir()
+    first_epoch = result.history[0]
+    for key in (
+        "train_loss",
+        "validation_loss",
+        "learning_rate",
+        "optimizer_step_count",
+        "train_seconds",
+        "validation_seconds",
+        "epoch_seconds",
+        "train_duration",
+        "validation_duration",
+        "epoch_duration",
+        "estimated_remaining_seconds",
+    ):
+        assert key in first_epoch
 
 
 def test_evaluation_state_requires_explicit_force_policy(tmp_path: Path) -> None:
@@ -152,3 +167,21 @@ def test_native_checkpoint_restores_epoch_optimizer_and_history(
     assert resumed.best_epoch == 2
     assert resumed.optimizer_step_count == 2
     assert len(resumed.history) == 2
+
+
+def test_interrupted_checkpoint_save_preserves_existing_checkpoint(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "checkpoints" / "best"
+    checkpoint.mkdir(parents=True)
+    marker = checkpoint / "existing.bin"
+    marker.write_text("preserve", encoding="utf-8")
+
+    class InterruptedModel:
+        def save_pretrained(self, directory: Path, **kwargs: Any) -> None:
+            del directory, kwargs
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        transformer_trainer._save_checkpoint(
+            InterruptedModel(), TinyTokenizer(), checkpoint, torch=torch
+        )
+    assert marker.read_text(encoding="utf-8") == "preserve"

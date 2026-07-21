@@ -21,6 +21,8 @@ data/reports/
 **/outputs/
 **/checkpoints/
 **/models/
+!src/remind_ai/models/
+!src/remind_ai/models/**
 *.joblib
 *.pkl
 *.pt

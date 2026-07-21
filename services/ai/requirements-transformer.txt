@@ -3,3 +3,4 @@
 -r requirements.txt
 torch>=2.2,<3
 transformers>=4.46,<5
+tqdm>=4.66,<5

@@ -10,12 +10,14 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import time
 from typing import Any, NoReturn
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+SERVICES_ROOT = AI_SERVICE_ROOT.parent
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
 
 from ai.src.remind_ai.data.emotion_dataset import (  # noqa: E402
     DatasetValidationError,
@@ -27,6 +29,13 @@ from ai.src.remind_ai.data.group_split import (  # noqa: E402
     dataset_structure_statistics,
     select_group_safe_split,
     split_leakage_statistics,
+)
+from ai.src.remind_ai.data.emotion_label_mapping import (  # noqa: E402
+    EmotionLabelMapping,
+    EmotionLabelMappingError,
+    load_emotion_label_mapping,
+    map_samples_to_coarse,
+    mapping_validation_report,
 )
 from ai.src.remind_ai.data.transformer_dataset import (  # noqa: E402
     TokenizedEmotionDataset,
@@ -47,11 +56,18 @@ from ai.src.remind_ai.training.transformer_trainer import (  # noqa: E402
     TrainingConfig,
     TransformerTrainingError,
     evaluate,
+    evaluate_with_predictions,
     evaluation_already_completed,
     fit,
     make_dataloader,
     seed_everything,
 )
+from ai.src.remind_ai.training.progress import (  # noqa: E402
+    ProgressConfig,
+    ProgressReporter,
+    format_duration,
+)
+from ai.src.emotion.coarse_settings import TRAINING_MAX_LENGTH  # noqa: E402
 
 
 class TransformerBaselineFailure(RuntimeError):
@@ -88,6 +104,50 @@ def _write_json(path: Path, payload: Mapping[str, object]) -> None:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
         raise TransformerBaselineFailure("a baseline output could not be written safely") from exc
+
+
+def _write_text(path: Path, content: str) -> None:
+    temporary: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=".transformer-baseline-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+        temporary.replace(path)
+    except Exception as exc:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        raise TransformerBaselineFailure("a baseline text output could not be written safely") from exc
+
+
+def _write_predictions(
+    path: Path,
+    expected: Sequence[int],
+    predicted: Sequence[int],
+    labels: Any,
+) -> None:
+    lines = [
+        json.dumps(
+            {
+                "sample_index": index,
+                "true_label_id": expected_id,
+                "true_label": labels.id2label[expected_id],
+                "predicted_label_id": predicted_id,
+                "predicted_label": labels.id2label[predicted_id],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        for index, (expected_id, predicted_id) in enumerate(zip(expected, predicted, strict=True))
+    ]
+    _write_text(path, "\n".join(lines) + "\n")
 
 
 def _class_counts(samples: Sequence[EmotionSample]) -> dict[str, int]:
@@ -207,10 +267,111 @@ def _tfidf_reference(tfidf_dir: Path) -> tuple[str, Mapping[str, object]]:
     return selected, metrics
 
 
-def _run_config_payload(arguments: argparse.Namespace, selection: Any) -> dict[str, object]:
+def _fine_transformer_reference() -> Mapping[str, object] | None:
+    metrics_path = (
+        AI_SERVICE_ROOT
+        / "data"
+        / "outputs"
+        / "transformer-baseline"
+        / "test_metrics.json"
+    )
+    if not metrics_path.is_file():
+        return None
+    payload = _read_json(metrics_path)
+    metrics = payload.get("metrics")
+    if not isinstance(metrics, Mapping):
+        return None
+    required = ("accuracy", "macro_f1", "weighted_f1", "sample_count")
+    if not all(isinstance(metrics.get(name), (int, float)) for name in required):
+        return None
+    return metrics
+
+
+def _fine_coarse_comparison(
+    coarse_metrics: Mapping[str, object] | None,
+) -> dict[str, object]:
+    fine_metrics = _fine_transformer_reference()
+    return {
+        "warning": (
+            "Fine-grained and coarse-grained tasks have different label spaces and "
+            "are not directly equivalent."
+        ),
+        "fine": (
+            {
+                "num_classes": 60,
+                "accuracy": fine_metrics.get("accuracy"),
+                "macro_f1": fine_metrics.get("macro_f1"),
+                "weighted_f1": fine_metrics.get("weighted_f1"),
+                "sample_count": fine_metrics.get("sample_count"),
+            }
+            if fine_metrics is not None
+            else None
+        ),
+        "coarse": {
+            "num_classes": 6,
+            "accuracy": coarse_metrics.get("accuracy") if coarse_metrics else None,
+            "macro_f1": coarse_metrics.get("macro_f1") if coarse_metrics else None,
+            "weighted_f1": coarse_metrics.get("weighted_f1") if coarse_metrics else None,
+            "sample_count": coarse_metrics.get("sample_count") if coarse_metrics else None,
+        },
+    }
+
+
+def _coarse_experiment_summary(
+    comparison: Mapping[str, object], *, dry_run: bool
+) -> str:
+    status = (
+        "This directory contains preflight artifacts only; no final metrics were produced."
+        if dry_run
+        else "Metrics were produced from the best validation macro-F1 checkpoint."
+    )
+    fine_available = comparison.get("fine") is not None
+    return f"""# Transformer coarse emotion baseline
+
+{status}
+
+## Purpose
+
+The fine baseline distinguishes 60 nuanced AI Hub emotion labels. This separate
+baseline predicts six service-oriented categories: 기쁨, 불안, 당황, 분노, 슬픔,
+and 상처. The tasks have different label spaces and their scores are not directly
+equivalent; a higher coarse score must not be described as a simple improvement.
+
+The mapping is derived from the official AI Hub source workbook fields
+`감정_대분류` and `감정_소분류`, joined to every JSON record through normalized
+HS01/HS02/HS03. The audited mapping covered all 58,268 records with no unmatched
+or ambiguous records.
+
+## Evaluation policy
+
+The deterministic profile-safe TF-IDF split is reproduced before labels are
+mapped. Profile, conversation-key, and normalized-text overlap remain zero.
+Validation macro-F1 selects the checkpoint; internal test is evaluated once only
+after selection. Existing fine output is read-only and was
+{"available" if fine_available else "not available"} for the comparison artifact.
+
+## Safety
+
+Only HS01, HS02, and optional HS03 are model inputs. System responses and metadata
+are excluded. Predictions contain sequential indices and labels only, never source
+text or identifiers. This experimental classifier is not a medical diagnosis.
+"""
+
+
+def _run_config_payload(
+    arguments: argparse.Namespace, selection: Any, *, num_labels: int
+) -> dict[str, object]:
     return {
         "model_name": arguments.model_name,
+        "model_version": f"klue-roberta-{arguments.label_level}-v1",
+        "label_level": arguments.label_level,
+        "num_labels": num_labels,
         "label_field": "$.profile.emotion.type",
+        "label_mapping": (
+            "services/ai/config/emotion_label_mapping.json"
+            if arguments.label_level == "coarse"
+            else None
+        ),
         "input_fields": [
             "$.talk.content.HS01",
             "$.talk.content.HS02",
@@ -242,29 +403,30 @@ def _run_config_payload(arguments: argparse.Namespace, selection: Any) -> dict[s
         "fp16_enabled": selection.fp16_enabled,
         "num_workers": arguments.num_workers,
         "dry_run": arguments.dry_run,
+        "progress_bar_enabled": not arguments.disable_progress_bar,
+        "progress_update_interval": arguments.progress_update_interval,
+        "show_gpu_memory": arguments.show_gpu_memory,
+        "log_every_n_steps": arguments.log_every_n_steps,
         "resume_from_checkpoint": arguments.resume_from_checkpoint is not None,
         "official_validation_scope": "reference_only_not_final_generalization",
     }
 
 
-def _write_readme(path: Path, dry_run: bool) -> None:
+def _write_readme(path: Path, dry_run: bool, label_level: str) -> None:
     status = "Dry-run preflight only; no training metrics were produced." if dry_run else (
         "The best model was selected with internal validation macro-F1."
     )
-    content = f"""# Transformer baseline output
+    content = f"""# Transformer {label_level} baseline output
 
 {status}
 
 This directory intentionally excludes source dialogue, profile-id, talk-id,
-conversation keys, hashes, digests, record-level predictions, and input paths.
+conversation keys, hashes, digests, and input paths.
 Internal test macro-F1 is the leakage-safe primary result. Official Validation
 is reference-only because the official files have known group overlap. This
 emotion classifier is an experimental non-medical signal and is not a diagnosis.
 """
-    try:
-        path.write_text(content, encoding="utf-8")
-    except OSError as exc:
-        raise TransformerBaselineFailure("the output README could not be written") from exc
+    _write_text(path, content)
 
 
 def _save_final_artifacts(model: Any, tokenizer: Any, output_dir: Path) -> None:
@@ -284,6 +446,8 @@ def _validate_paths(arguments: argparse.Namespace) -> None:
     ]
     if arguments.resume_from_checkpoint is not None:
         required.append(Path(arguments.resume_from_checkpoint))
+    if arguments.label_level == "coarse":
+        required.append(Path(arguments.label_mapping_path))
     if not all(path.is_absolute() for path in required):
         raise TransformerBaselineFailure("all input and output paths must be absolute")
     train_json, validation_json, tfidf_dir, _ = required[:4]
@@ -295,18 +459,40 @@ def _validate_paths(arguments: argparse.Namespace) -> None:
         raise TransformerBaselineFailure("dataset inputs must be separate files")
     if not tfidf_dir.is_dir():
         raise TransformerBaselineFailure("the TF-IDF output directory is unavailable")
+    if arguments.label_level == "coarse":
+        if arguments.max_length != TRAINING_MAX_LENGTH:
+            raise TransformerBaselineFailure(
+                "coarse mode max-length must be 128 to match the inference contract"
+            )
+        mapping_path = Path(arguments.label_mapping_path)
+        if not mapping_path.is_file() or mapping_path.suffix.casefold() != ".json":
+            raise TransformerBaselineFailure("the coarse label mapping file is unavailable")
+        fine_output = AI_SERVICE_ROOT / "data" / "outputs" / "transformer-baseline"
+        if Path(arguments.output_dir).resolve() == fine_output.resolve():
+            raise TransformerBaselineFailure(
+                "coarse mode cannot write to the fine transformer output directory"
+            )
     if Path(arguments.model_name).is_absolute():
         raise TransformerBaselineFailure("model-name must be a public model identifier")
-    if arguments.resume_from_checkpoint is not None and not required[-1].is_dir():
+    if (
+        arguments.resume_from_checkpoint is not None
+        and not Path(arguments.resume_from_checkpoint).is_dir()
+    ):
         raise TransformerBaselineFailure("the resume checkpoint is unavailable")
 
 
 def run(arguments: argparse.Namespace) -> dict[str, object]:
+    run_started = time.perf_counter()
     _validate_paths(arguments)
     train_path = Path(arguments.train_json)
     validation_path = Path(arguments.validation_json)
     tfidf_dir = Path(arguments.tfidf_output_dir)
-    output_dir = Path(arguments.output_dir)
+    requested_output_dir = Path(arguments.output_dir)
+    output_dir = (
+        requested_output_dir / "dry-run"
+        if arguments.dry_run and arguments.label_level == "coarse"
+        else requested_output_dir
+    )
     state_path = output_dir / "evaluation_state.json"
     if (
         not arguments.dry_run
@@ -321,14 +507,43 @@ def run(arguments: argparse.Namespace) -> dict[str, object]:
     samples = [*official_train, *official_validation]
     if not samples:
         raise TransformerBaselineFailure("the combined approved dataset is empty")
-    split, split_samples, split_summary, split_random_state, _ = _reproduce_split(
+    split, fine_split_samples, fine_split_summary, split_random_state, candidate_count = _reproduce_split(
         samples, tfidf_dir
     )
     if arguments.random_state != split_random_state:
         raise TransformerBaselineFailure(
             "random_state must match the TF-IDF split configuration"
         )
-    labels = build_label_encoding(samples)
+    mapping: EmotionLabelMapping | None = None
+    mapping_report: dict[str, object] | None = None
+    model_samples = samples
+    split_samples = fine_split_samples
+    split_summary = fine_split_summary
+    if arguments.label_level == "coarse":
+        mapping_path = Path(arguments.label_mapping_path)
+        mapping = load_emotion_label_mapping(mapping_path)
+        model_samples = map_samples_to_coarse(
+            samples, mapping, mapping_path=mapping_path
+        )
+        split_samples = {
+            name: map_samples_to_coarse(
+                partition, mapping, mapping_path=mapping_path
+            )
+            for name, partition in fine_split_samples.items()
+        }
+        split_summary = _split_summary(model_samples, split_samples, split)
+        split_summary["random_state"] = split_random_state
+        split_summary["requested_candidate_count"] = candidate_count
+        split_summary["fine_split_signature_verified_before_mapping"] = True
+        split_summary["fine_record_count"] = len(samples)
+        mapping_report = mapping_validation_report(mapping, samples, split_samples)
+        if not mapping_report["sample_count_preserved"]:
+            raise TransformerBaselineFailure("coarse mapping changed the split sample count")
+    labels = build_label_encoding(
+        model_samples,
+        classes=(mapping.coarse_labels if mapping is not None else None),
+    )
+    model_official_validation = model_samples[len(official_train) :]
     selection = select_device(
         arguments.device,
         allow_cpu_fallback=arguments.allow_cpu_fallback,
@@ -363,13 +578,26 @@ def run(arguments: argparse.Namespace) -> dict[str, object]:
         output_dir / "label_classes.json",
         {
             "label_field": "$.profile.emotion.type",
+            "label_level": arguments.label_level,
             "classes": list(labels.classes),
             "label2id": dict(labels.label2id),
             "id2label": {str(key): value for key, value in labels.id2label.items()},
         },
     )
-    _write_json(output_dir / "run_config.json", _run_config_payload(arguments, selection))
-    selected_tfidf, tfidf_metrics = _tfidf_reference(tfidf_dir)
+    _write_json(
+        output_dir / "run_config.json",
+        _run_config_payload(arguments, selection, num_labels=len(labels.classes)),
+    )
+    if mapping is not None and mapping_report is not None:
+        _write_json(
+            output_dir / "label_mapping.json",
+            dict(_read_json(Path(arguments.label_mapping_path))),
+        )
+        _write_json(output_dir / "mapping_validation.json", mapping_report)
+    selected_tfidf: str | None = None
+    tfidf_metrics: Mapping[str, object] | None = None
+    if arguments.label_level == "fine":
+        selected_tfidf, tfidf_metrics = _tfidf_reference(tfidf_dir)
 
     if arguments.dry_run:
         limit = min(arguments.dry_run_samples, len(split_samples["train"]))
@@ -381,50 +609,96 @@ def run(arguments: argparse.Namespace) -> dict[str, object]:
             torch,
             dataset,
             collator,
-            batch_size=min(arguments.eval_batch_size, limit),
+            batch_size=min(arguments.train_batch_size, limit),
             shuffle=False,
             num_workers=arguments.num_workers,
         )
         batch = next(iter(loader))
-        model.to(torch.device(selection.selected))
+        device = torch.device(selection.selected)
+        with tempfile.TemporaryDirectory(prefix="transformer-dry-run-") as temporary:
+            smoke_training = fit(
+                torch=torch,
+                model=model,
+                tokenizer=tokenizer,
+                train_loader=loader,
+                validation_loader=loader,
+                labels=labels,
+                device=device,
+                checkpoints_dir=Path(temporary) / "checkpoints",
+                config=TrainingConfig(
+                    epochs=1,
+                    learning_rate=arguments.learning_rate,
+                    train_batch_size=min(arguments.train_batch_size, limit),
+                    eval_batch_size=min(arguments.train_batch_size, limit),
+                    gradient_accumulation_steps=min(
+                        arguments.gradient_accumulation_steps, len(loader)
+                    ),
+                    weight_decay=arguments.weight_decay,
+                    warmup_ratio=arguments.warmup_ratio,
+                    max_grad_norm=arguments.max_grad_norm,
+                    early_stopping_patience=1,
+                    random_state=arguments.random_state,
+                    num_workers=arguments.num_workers,
+                    fp16=selection.fp16_enabled,
+                    progress_bar=not arguments.disable_progress_bar,
+                    progress_update_interval=arguments.progress_update_interval,
+                    show_gpu_memory=arguments.show_gpu_memory,
+                    log_every_n_steps=arguments.log_every_n_steps,
+                ),
+            )
+            checkpoint_reloaded = (Path(temporary) / "checkpoints" / "best").is_dir()
         model.eval()
         with torch.no_grad():
             moved = {
-                name: value.to(torch.device(selection.selected))
-                if hasattr(value, "to")
-                else value
+                name: value.to(device) if hasattr(value, "to") else value
                 for name, value in batch.items()
             }
             outputs = model(**moved)
         logits = getattr(outputs, "logits", None)
         if logits is None or int(logits.shape[-1]) != len(labels.classes):
             raise TransformerBaselineFailure("the dry-run model forward pass is invalid")
-        # Verify the metric path without persisting synthetic predictions.
-        from ai.src.remind_ai.models.transformer_classifier import classification_metrics
-
-        metric_result = classification_metrics([0, 1], [0, 1], labels)
+        smoke_metrics = smoke_training.history[-1]["validation_metrics"]
         _write_json(
             output_dir / "dry_run_summary.json",
             {
                 "completed": True,
-                "training_started": False,
+                "full_training_started": False,
+                "smoke_backward_completed": True,
+                "temporary_checkpoint_saved_and_reloaded": checkpoint_reloaded,
                 "sample_count": limit,
                 "batch": safe_batch_shape(batch),
                 "model_forward_completed": True,
-                "metric_function_completed": bool(metric_result),
+                "model_classifier_num_labels": len(labels.classes),
+                "metric_function_completed": bool(smoke_metrics),
+                "progress_bar_enabled": not arguments.disable_progress_bar,
             },
         )
-        _write_json(
-            output_dir / "comparison.json",
-            comparison_payload(
-                None,
-                tfidf_metrics,
-                model_name=arguments.model_name,
-                selected_tfidf_model=selected_tfidf,
-            ),
-        )
-        _write_readme(output_dir / "README.md", True)
-        return {"dry_run": True, "candidate_seed": split.candidate_seed}
+        if arguments.label_level == "coarse":
+            comparison = _fine_coarse_comparison(None)
+            _write_json(output_dir / "comparison_with_fine_baseline.json", comparison)
+            _write_text(
+                output_dir / "experiment_summary.md",
+                _coarse_experiment_summary(comparison, dry_run=True),
+            )
+        else:
+            assert tfidf_metrics is not None and selected_tfidf is not None
+            _write_json(
+                output_dir / "comparison.json",
+                comparison_payload(
+                    None,
+                    tfidf_metrics,
+                    model_name=arguments.model_name,
+                    selected_tfidf_model=selected_tfidf,
+                ),
+            )
+        _write_readme(output_dir / "README.md", True, arguments.label_level)
+        return {
+            "dry_run": True,
+            "label_level": arguments.label_level,
+            "candidate_seed": split.candidate_seed,
+            "output_dir": str(output_dir),
+            "total_elapsed_seconds": time.perf_counter() - run_started,
+        }
 
     datasets = {
         name: TokenizedEmotionDataset(
@@ -481,6 +755,10 @@ def run(arguments: argparse.Namespace) -> dict[str, object]:
             random_state=arguments.random_state,
             num_workers=arguments.num_workers,
             fp16=selection.fp16_enabled,
+            progress_bar=not arguments.disable_progress_bar,
+            progress_update_interval=arguments.progress_update_interval,
+            show_gpu_memory=arguments.show_gpu_memory,
+            log_every_n_steps=arguments.log_every_n_steps,
         ),
         resume_from_checkpoint=(
             Path(arguments.resume_from_checkpoint)
@@ -490,9 +768,24 @@ def run(arguments: argparse.Namespace) -> dict[str, object]:
     )
     validation_metrics = training.history[training.best_epoch - 1]["validation_metrics"]
     assert isinstance(validation_metrics, Mapping)
-    test_metrics = evaluate(torch, model, loaders["test"], device, labels)
+    reporter = ProgressReporter(
+        ProgressConfig(
+            enabled=not arguments.disable_progress_bar,
+            update_interval=arguments.progress_update_interval,
+            show_gpu_memory=arguments.show_gpu_memory,
+        )
+    )
+    test_metrics, expected_ids, predicted_ids = evaluate_with_predictions(
+        torch,
+        model,
+        loaders["test"],
+        device,
+        labels,
+        reporter=reporter,
+        desc="Final internal test",
+    )
     official_dataset = TokenizedEmotionDataset(
-        official_validation, tokenizer, labels, max_length=arguments.max_length
+        model_official_validation, tokenizer, labels, max_length=arguments.max_length
     )
     official_loader = make_dataloader(
         torch,
@@ -502,7 +795,15 @@ def run(arguments: argparse.Namespace) -> dict[str, object]:
         shuffle=False,
         num_workers=arguments.num_workers,
     )
-    official_metrics = evaluate(torch, model, official_loader, device, labels)
+    official_metrics = evaluate(
+        torch,
+        model,
+        official_loader,
+        device,
+        labels,
+        reporter=reporter,
+        desc="Official Validation [Reference]",
+    )
     _write_json(
         output_dir / "validation_metrics.json",
         {
@@ -512,12 +813,28 @@ def run(arguments: argparse.Namespace) -> dict[str, object]:
         },
     )
     _write_json(
-        output_dir / "test_metrics.json",
+        output_dir / "best_validation_metrics.json",
         {
-            "selection_was_completed_before_internal_test": True,
-            "evaluated_once_after_model_selection": True,
-            "metrics": test_metrics,
+            "selection_metric": "macro_f1",
+            "best_epoch": training.best_epoch,
+            "metrics": dict(validation_metrics),
         },
+    )
+    _write_json(
+        output_dir / "test_metrics.json",
+        (
+            {
+                **test_metrics,
+                "selection_was_completed_before_internal_test": True,
+                "evaluated_once_after_model_selection": True,
+            }
+            if arguments.label_level == "coarse"
+            else {
+                "selection_was_completed_before_internal_test": True,
+                "evaluated_once_after_model_selection": True,
+                "metrics": test_metrics,
+            }
+        ),
     )
     _write_json(
         output_dir / "official_validation_metrics.json",
@@ -534,25 +851,66 @@ def run(arguments: argparse.Namespace) -> dict[str, object]:
             "best_validation_macro_f1": training.best_validation_macro_f1,
             "stopped_early": training.stopped_early,
             "optimizer_step_count": training.optimizer_step_count,
+            "total_elapsed_seconds": training.total_elapsed_seconds,
+            "total_elapsed_duration": format_duration(training.total_elapsed_seconds),
             "epochs": list(training.history),
         },
     )
-    _write_json(
-        output_dir / "comparison.json",
-        comparison_payload(
-            test_metrics,
-            tfidf_metrics,
-            model_name=arguments.model_name,
-            selected_tfidf_model=selected_tfidf,
-        ),
-    )
+    if arguments.label_level == "coarse":
+        confusion = test_metrics.get("confusion_matrix")
+        per_class = test_metrics.get("per_class")
+        if not isinstance(confusion, Mapping) or not isinstance(per_class, Mapping):
+            raise TransformerBaselineFailure("coarse evaluation artifacts are invalid")
+        _write_json(output_dir / "confusion_matrix.json", dict(confusion))
+        _write_json(
+            output_dir / "classification_report.json",
+            {
+                "per_class": dict(per_class),
+                "accuracy": test_metrics.get("accuracy"),
+                "macro_precision": test_metrics.get("macro_precision"),
+                "macro_recall": test_metrics.get("macro_recall"),
+                "macro_f1": test_metrics.get("macro_f1"),
+                "weighted_f1": test_metrics.get("weighted_f1"),
+                "sample_count": test_metrics.get("sample_count"),
+            },
+        )
+        _write_predictions(
+            output_dir / "predictions.jsonl", expected_ids, predicted_ids, labels
+        )
+        comparison = _fine_coarse_comparison(test_metrics)
+        _write_json(output_dir / "comparison_with_fine_baseline.json", comparison)
+        _write_text(
+            output_dir / "experiment_summary.md",
+            _coarse_experiment_summary(comparison, dry_run=False),
+        )
+    else:
+        assert tfidf_metrics is not None and selected_tfidf is not None
+        _write_json(
+            output_dir / "comparison.json",
+            comparison_payload(
+                test_metrics,
+                tfidf_metrics,
+                model_name=arguments.model_name,
+                selected_tfidf_model=selected_tfidf,
+            ),
+        )
     _save_final_artifacts(model, tokenizer, output_dir)
     _write_json(
         state_path,
         {"final_evaluation_completed": True, "force_evaluate_used": arguments.force_evaluate},
     )
-    _write_readme(output_dir / "README.md", False)
-    return {"dry_run": False, "best_epoch": training.best_epoch}
+    _write_readme(output_dir / "README.md", False, arguments.label_level)
+    return {
+        "dry_run": False,
+        "label_level": arguments.label_level,
+        "best_epoch": training.best_epoch,
+        "best_validation_macro_f1": training.best_validation_macro_f1,
+        "test_accuracy": test_metrics.get("accuracy"),
+        "test_macro_f1": test_metrics.get("macro_f1"),
+        "test_weighted_f1": test_metrics.get("weighted_f1"),
+        "output_dir": str(output_dir),
+        "total_elapsed_seconds": time.perf_counter() - run_started,
+    }
 
 
 class _SafeArgumentParser(argparse.ArgumentParser):
@@ -598,6 +956,13 @@ def _ratio(value: str) -> float:
     return parsed
 
 
+def _result_number(result: Mapping[str, object], name: str) -> float:
+    value = result.get(name)
+    if not isinstance(value, (int, float)):
+        raise TransformerBaselineFailure("a completion metric is invalid")
+    return float(value)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = _SafeArgumentParser(
         description="Train a profile-safe KLUE-RoBERTa baseline without logging source records."
@@ -606,6 +971,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--validation-json", required=True)
     parser.add_argument("--tfidf-output-dir", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--label-level", choices=("fine", "coarse"), default="fine")
+    parser.add_argument(
+        "--label-mapping-path",
+        default=str(AI_SERVICE_ROOT / "config" / "emotion_label_mapping.json"),
+    )
     parser.add_argument("--model-name", default="klue/roberta-base")
     parser.add_argument("--max-length", type=_positive_int, default=128)
     parser.add_argument("--epochs", type=_positive_int, default=3)
@@ -626,18 +996,23 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force-evaluate", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--dry-run-samples", type=_positive_int, default=32)
+    parser.add_argument("--disable-progress-bar", action="store_true")
+    parser.add_argument("--progress-update-interval", type=_positive_int, default=1)
+    parser.add_argument("--show-gpu-memory", action="store_true")
+    parser.add_argument("--log-every-n-steps", type=_nonnegative_int, default=0)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         arguments = _build_parser().parse_args(argv)
-        run(arguments)
+        result = run(arguments)
     except (
         TransformerBaselineFailure,
         DatasetValidationError,
         GroupSplitError,
         TransformerDatasetError,
+        EmotionLabelMappingError,
         TransformerModelError,
         TransformerTrainingError,
     ) as exc:
@@ -649,7 +1024,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    print("Transformer baseline dry-run completed" if arguments.dry_run else "Transformer baseline completed")
+    if arguments.dry_run:
+        print(
+            "Transformer coarse baseline dry-run completed"
+            if arguments.label_level == "coarse"
+            else "Transformer baseline dry-run completed"
+        )
+        return 0
+    if arguments.label_level == "coarse":
+        separator = "=" * 60
+        print(separator)
+        print("Transformer coarse baseline completed")
+        print(separator)
+        print(f"Best epoch        : {result['best_epoch']}")
+        print(f"Best validation F1: {_result_number(result, 'best_validation_macro_f1'):.6f}")
+        print(f"Test accuracy     : {_result_number(result, 'test_accuracy'):.6f}")
+        print(f"Test macro F1     : {_result_number(result, 'test_macro_f1'):.6f}")
+        print(f"Test weighted F1  : {_result_number(result, 'test_weighted_f1'):.6f}")
+        print(f"Output directory  : {result['output_dir']}")
+        print(
+            "Total elapsed     : "
+            f"{format_duration(_result_number(result, 'total_elapsed_seconds'))}"
+        )
+        print(separator)
+    else:
+        print("Transformer baseline completed")
     return 0
 
 

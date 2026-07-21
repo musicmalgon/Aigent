@@ -160,6 +160,8 @@ def classification_metrics(
         "weighted_f1": round(float(weighted_f1), 6),
         "per_class": {
             label: {
+                "label_id": index,
+                "label_name": label,
                 "precision": round(float(precision[index]), 6),
                 "recall": round(float(recall[index]), 6),
                 "f1": round(float(f1[index]), 6),

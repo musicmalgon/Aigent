@@ -1,4 +1,5 @@
-# Optional CPU inference environment for the offline Transformer analyzer.
+# Optional local Transformer training/inference environment.
+# Install a platform-appropriate PyTorch wheel first if the default wheel is unsuitable.
 -r requirements.txt
 torch>=2.2,<3
 transformers>=4.46,<5

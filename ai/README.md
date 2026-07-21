@@ -13,6 +13,7 @@ Re:Mind AI 파트는 초기 자가 보고 결과를 고정 기준점으로 보�
 - `stable`, `fatigue`, `anxiety`, `other` 감정 라벨 명세와 원본 라벨 매핑
   초안
 - TF-IDF와 Transformer 감정 분석기의 공통 인터페이스 및 미준비 상태 오류
+- profile-safe split을 그대로 재사용하는 KLUE-RoBERTa 학습 baseline과 dry-run
 - 모델명·모델 버전을 명시적으로 요구하고 미평가 관련성은 `null`로 보존하는
   추론 계약
 - 가중합을 사용하지 않는 신호 결합 규칙의 보수적인 뼈대와 Reason Code
@@ -20,9 +21,9 @@ Re:Mind AI 파트는 초기 자가 보고 결과를 고정 기준점으로 보�
 - Assessment 정책, Behavioral Baseline 명세, 백엔드 전달 초안
 - 스키마, 인터페이스, 합성 데이터를 검증하는 테스트
 
-아직 포함하지 않는 항목은 실제 데이터 전처리, 모델 학습·평가, Transformer
-다운로드·파인튜닝, Behavioral Baseline 계산 알고리즘, 확정 임계값, LLM 설명
-생성, 백엔드 API입니다.
+실제 AI Hub 데이터, 모델 다운로드·학습 결과, Behavioral Baseline 계산 알고리즘,
+확정 임계값, LLM 설명 생성, 백엔드 API는 포함하지 않습니다. Transformer 코드는
+로컬 실행 준비까지만 제공하며 성능 수치는 실제 학습 전에는 작성하지 않습니다.
 
 ## 디렉터리 구조
 
@@ -114,13 +115,14 @@ TF-IDF의 joblib 파일은 pickle 기반이므로 로드하는 것만으로 임�
 7. 검증한 두 아티팩트를 로컬 모델 경로에 저장하고 명시적인 모델명·버전으로
    `TfidfEmotionAnalyzer`에 연결합니다.
 
-## 향후 Transformer 파인튜닝 순서
+## Transformer baseline 로컬 실행 순서
 
 1. 모델과 데이터의 라이선스·사용 조건을 확인합니다.
 2. 확정된 감정 라벨과 데이터 분할을 재사용합니다.
-3. 선택 의존성 환경에서 별도의 학습 실험을 수행합니다.
-4. 외부 평가셋과 오류 사례를 사람이 검토합니다.
-5. 배포 후보의 버전과 라벨 매핑을 고정한 뒤 공통 `EmotionAnalysis`
+3. `docs/transformer_baseline_guide.md`의 dry-run을 먼저 수행합니다.
+4. 선택 의존성 환경에서 별도의 학습 실험을 수행합니다.
+5. 외부 평가셋과 오류 사례를 사람이 검토합니다.
+6. 배포 후보의 버전과 라벨 매핑을 고정한 뒤 공통 `EmotionAnalysis`
    출력으로 어댑터를 연결합니다.
 
 ## 데이터 및 표현 안전

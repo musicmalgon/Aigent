@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assessment_anchor.schema.json",
+  "title": "AssessmentAnchor",
+  "description": "AI가 재계산하지 않는 초기 자가 보고 고정 기준점.",
+  "$comment": "examples의 모든 값은 스키마 검증용 합성 데이터이며 의료적 판단을 나타내지 않는다. k_bat 값의 실제 사용 가능 여부는 별도 정책 검토 대상이다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "assessment_type",
+    "target_group",
+    "completed_at",
+    "dimensions",
+    "interpretation_scope",
+    "source"
+  ],
+  "properties": {
+    "assessment_type": {
+      "$ref": "#/$defs/assessmentType"
+    },
+    "target_group": {
+      "$ref": "#/$defs/targetGroup"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "UTC Z 또는 명시적 UTC 오프셋을 포함하는 ISO 8601 일시."
+    },
+    "dimensions": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/assessmentDimension"
+      },
+      "additionalProperties": {
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "description": "원본 자가 보고 차원 값. null은 값 없음이며 숫자 0과 다르다."
+    },
+    "interpretation_scope": {
+      "$ref": "#/$defs/interpretationScope"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    }
+  },
+  "$defs": {
+    "assessmentType": {
+      "type": "string",
+      "enum": [
+        "custom_initial_state_survey",
+        "k_bat"
+      ]
+    },
+    "targetGroup": {
+      "type": "string",
+      "enum": [
+        "university_student",
+        "job_seeker",
+        "early_career_worker"
+      ]
+    },
+    "assessmentDimension": {
+      "type": "string",
+      "enum": [
+        "exhaustion",
+        "academic_burden",
+        "occupational_burden",
+        "recovery_difficulty"
+      ]
+    },
+    "interpretationScope": {
+      "type": "string",
+      "enum": [
+        "fixed_reference_only"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "assessment_type": "custom_initial_state_survey",
+      "target_group": "university_student",
+      "completed_at": "2026-01-01T09:00:00+09:00",
+      "dimensions": {
+        "exhaustion": 0,
+        "academic_burden": 2,
+        "recovery_difficulty": null
+      },
+      "interpretation_scope": "fixed_reference_only",
+      "source": "synthetic_foundation_example"
+    }
+  ]
+}

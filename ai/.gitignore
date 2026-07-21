@@ -1,0 +1,32 @@
+# Python build and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+
+# Local model artifacts and experiment outputs
+models/
+artifacts/
+*.joblib
+*.pkl
+*.pt
+*.pth
+*.safetensors
+
+# Raw or locally processed datasets must not be committed.
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# AI Hub dataset
+emotional-dialogue/
+
+# audit output
+audit*.json
+
+# python cache
+**/__pycache__/
+*.pyc

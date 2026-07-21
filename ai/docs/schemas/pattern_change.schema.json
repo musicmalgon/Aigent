@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pattern_change.schema.json",
+  "title": "PatternChangeResult",
+  "description": "개인 기준선과 최근 기록 사이의 기술적 변화 비교 결과.",
+  "$comment": "examples의 모든 값은 스키마 검증용 합성 데이터다. 변화 관찰은 의료적 판단이 아니며 임의의 판정 임계값을 포함하지 않는다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "data_sufficiency",
+    "change_level",
+    "duration_days",
+    "factors",
+    "calculation_version"
+  ],
+  "properties": {
+    "data_sufficiency": {
+      "$ref": "#/$defs/dataSufficiency"
+    },
+    "change_level": {
+      "$ref": "#/$defs/changeLevel"
+    },
+    "duration_days": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "null은 기간을 계산할 수 없음을 뜻하며 0과 다르다."
+    },
+    "factors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/patternFactor"
+      }
+    },
+    "calculation_version": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "data_sufficiency": {
+            "const": "sufficient"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "change_level": {
+            "enum": [
+              "no_notable_change",
+              "change_observed"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "change_level": {
+                  "const": "no_notable_change"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "duration_days": {
+                  "const": 0
+                },
+                "factors": {
+                  "maxItems": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "change_level": {
+                  "const": "change_observed"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "duration_days": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "factors": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "else": {
+        "properties": {
+          "change_level": {
+            "const": "unknown"
+          },
+          "duration_days": {
+            "type": "null"
+          },
+          "factors": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "dataSufficiency": {
+      "type": "string",
+      "enum": [
+        "sufficient",
+        "insufficient",
+        "unavailable"
+      ]
+    },
+    "changeLevel": {
+      "type": "string",
+      "enum": [
+        "no_notable_change",
+        "change_observed",
+        "unknown"
+      ]
+    },
+    "behavioralMetric": {
+      "type": "string",
+      "enum": [
+        "sleep_minutes",
+        "steps",
+        "active_minutes",
+        "exercise_minutes",
+        "work_or_study_minutes",
+        "rest_minutes",
+        "schedule_count",
+        "subjective_fatigue"
+      ]
+    },
+    "changeDirection": {
+      "type": "string",
+      "enum": [
+        "increased",
+        "decreased",
+        "unchanged",
+        "unknown"
+      ]
+    },
+    "metricUnit": {
+      "type": "string",
+      "enum": [
+        "minutes",
+        "count",
+        "score"
+      ]
+    },
+    "nullableNonNegativeNumber": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "patternFactor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric",
+        "direction",
+        "baseline_value",
+        "recent_value",
+        "change_amount",
+        "unit"
+      ],
+      "properties": {
+        "metric": {
+          "$ref": "#/$defs/behavioralMetric"
+        },
+        "direction": {
+          "$ref": "#/$defs/changeDirection"
+        },
+        "baseline_value": {
+          "$ref": "#/$defs/nullableNonNegativeNumber"
+        },
+        "recent_value": {
+          "$ref": "#/$defs/nullableNonNegativeNumber"
+        },
+        "change_amount": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/metricUnit"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "data_sufficiency": "sufficient",
+      "change_level": "change_observed",
+      "duration_days": 4,
+      "factors": [
+        {
+          "metric": "sleep_minutes",
+          "direction": "decreased",
+          "baseline_value": 430,
+          "recent_value": 385,
+          "change_amount": -45,
+          "unit": "minutes"
+        }
+      ],
+      "calculation_version": "foundation-draft"
+    }
+  ]
+}

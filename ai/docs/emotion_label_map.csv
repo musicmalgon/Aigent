@@ -1,0 +1,9 @@
+original_label,remind_label,reason,review_status,notes
+기쁨,stable,긍정적인 정서,draft,실제 원본 라벨과 사용 조건 확인 후 재검토 TODO
+편안,stable,안정적인 상태,draft,실제 원본 라벨과 사용 조건 확인 후 재검토 TODO
+피로,fatigue,직접 대응 후보,draft,실제 원본 라벨과 사용 조건 확인 후 재검토 TODO
+무기력,fatigue,에너지 저하 후보,draft,실제 원본 라벨과 사용 조건 확인 후 재검토 TODO
+불안,anxiety,직접 대응 후보,draft,실제 원본 라벨과 사용 조건 확인 후 재검토 TODO
+걱정,anxiety,유사 정서 후보,draft,실제 원본 라벨과 사용 조건 확인 후 재검토 TODO
+분노,other,현재 핵심 분류 외 후보,draft,원본 존재 여부 확인 및 세부 분류 확장 검토 TODO
+슬픔,other,현재 핵심 분류 외 후보,draft,원본 존재 여부 확인 및 세부 분류 확장 검토 TODO

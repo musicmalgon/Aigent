@@ -1,0 +1,31 @@
+id,text,primary_emotion,secondary_signals,cause_tags,review_status,review_note
+eval_001,대학생인 오늘은 수업을 무난히 마치고 저녁에도 마음이 편안했다,stable,,daily_routine,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_002,아르바이트가 한가해서 동료와 웃으며 여유롭게 마무리했다,stable,,daily_routine,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_003,시험이 끝난 뒤 푹 자고 나니 어제보다 회복된 느낌이다,stable,fatigue,sleep|academic,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_004,팀 프로젝트 발표를 잘 마쳐서 이제는 한결 마음이 놓인다,stable,anxiety,academic,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_005,취업 준비생으로서 계획대로 면접 연습을 마쳐 오늘은 꽤 만족스럽다,stable,,job_search,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_006,사회초년생이지만 오늘 업무는 차분하게 처리했다,stable,,workload,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_007,주말에 충분히 쉬고 산책도 해서 몸과 마음이 가벼웠다,stable,,daily_routine,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_008,특별한 일 없이 공부와 식사를 평소처럼 챙긴 평범한 하루였다,stable,,daily_routine,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_009,시험 공부로 며칠째 잠이 부족해서 종일 눈이 무겁고 기운이 없다,fatigue,,academic|sleep,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_010,팀 프로젝트 수정이 길어져 아무것도 더 하고 싶지 않을 만큼 지쳤다,fatigue,,academic|workload,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_011,수업 뒤 바로 아르바이트까지 다녀오니 다리에 힘이 빠진다,fatigue,,academic|workload,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_012,면접 준비를 밤늦게까지 반복했더니 머리가 멍하고 집중이 안 된다,fatigue,anxiety,job_search|sleep,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요; secondary anxiety 원문 근거 재검토
+eval_013,신입 업무로 야근한 뒤 잠을 자도 피로가 그대로 남아 있다,fatigue,,workload|sleep,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_014,출퇴근과 교육 일정이 이어져 저녁에는 씻을 힘도 부족했다,fatigue,,workload|daily_routine,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_015,쉬는 날이었는데도 지난주 피곤함이 덜 풀려 계속 누워 있었다,fatigue,,daily_routine,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_016,자기소개서를 여러 곳에 고치다 보니 에너지가 바닥난 기분이다,fatigue,,job_search|workload,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_017,내일 시험에서 모르는 문제가 나올까 봐 마음이 계속 조급하다,anxiety,,academic,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_018,팀 프로젝트 발표 순서를 기다리니 실수할까 봐 긴장된다,anxiety,,academic,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_019,면접 결과가 언제 올지 몰라 휴대폰을 자꾸 확인하게 된다,anxiety,,job_search,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_020,첫 직장에서 맡은 일을 잘못 처리할까 봐 계속 신경이 쓰인다,anxiety,,workload,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_021,마감이 가까워질수록 해야 할 일이 떠올라 마음이 급해진다,anxiety,fatigue,workload,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요; secondary fatigue 원문 근거 재검토
+eval_022,아르바이트 교대 시간을 잘못 알았을까 봐 출근 전부터 걱정됐다,anxiety,,workload,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_023,지원한 인턴 자리에서 연락이 없어서 앞으로가 불확실하게 느껴진다,anxiety,,job_search,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_024,팀원이 약속한 자료를 또 늦게 보내서 화가 났다,other,,academic,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_025,기대했던 지원 결과가 좋지 않아 하루 종일 속상했다,other,,job_search,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_026,발표를 끝내 후련하면서도 결과가 걱정돼 마음이 복잡하다,other,stable|anxiety,academic,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_027,오늘은 그냥 여러 생각이 뒤섞여 내 기분을 뭐라고 해야 할지 모르겠다,other,,unspecified,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_028,반복되는 교육만 듣다 보니 지루하고 답답한 하루였다,other,,workload,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_029,친구와 만나기로 한 약속이 취소돼 아쉽고 서운했다,other,,relationship,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요
+eval_030,야근 뒤 지치기도 했고 내일 업무도 걱정돼 어느 감정이 더 큰지 모르겠다,other,fatigue|anxiety,workload,needs_human_review,합성 문장; 외부 평가셋 초안; 학습 사용 전 검토 필요

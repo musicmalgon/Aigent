@@ -24,6 +24,8 @@ from ai.src.schemas import (
     BehavioralMetric,
     CombinedResultType,
     CombinedSignalResult,
+    CoarseEmotionInferenceResponse,
+    CoarseEmotionInput,
     EmotionAnalysis,
     MetricSufficiency,
     PatternChangeResult,
@@ -38,6 +40,8 @@ MODEL_BY_SCHEMA: dict[str, type[BaseModel]] = {
     "emotion_analysis.schema.json": EmotionAnalysis,
     "pattern_change.schema.json": PatternChangeResult,
     "combined_signal_result.schema.json": CombinedSignalResult,
+    "coarse_emotion_inference_request.schema.json": CoarseEmotionInput,
+    "coarse_emotion_inference_response.schema.json": CoarseEmotionInferenceResponse,
 }
 
 
@@ -101,7 +105,9 @@ def test_json_schema_examples_match_model_fields_and_validate(
     assert schema["examples"]
     assert "합성" in schema["$comment"]
     assert set(schema["properties"]) == set(model.model_fields)
-    assert set(schema["required"]) == set(model.model_fields)
+    assert set(schema["required"]) == {
+        name for name, field in model.model_fields.items() if field.is_required()
+    }
 
     for example in schema["examples"]:
         validator.validate(example)

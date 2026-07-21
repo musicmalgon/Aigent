@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coarse_emotion_inference_request.schema.json",
+  "title": "CoarseEmotionInput",
+  "description": "KLUE-RoBERTa coarse emotion inference에 사용할 최대 세 개의 사용자 발화.",
+  "$comment": "examples의 문장은 모두 합성 데이터다. hs01과 hs02는 학습 입력과 동일하게 필수이며 hs03은 선택 사항이다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "hs01",
+    "hs02"
+  ],
+  "properties": {
+    "hs01": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
+    "hs02": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
+    "hs03": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "\\S"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "examples": [
+    {
+      "hs01": "요즘 잠을 거의 못 자.",
+      "hs02": "일정이 많아서 계속 불안해.",
+      "hs03": null
+    }
+  ]
+}

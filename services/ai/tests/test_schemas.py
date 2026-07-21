@@ -30,7 +30,7 @@ from ai.src.schemas import (
 )
 
 
-SCHEMA_DIR = Path(__file__).parents[1] / "docs" / "schemas"
+SCHEMA_DIR = Path(__file__).parents[3] / "packages" / "contracts" / "schemas"
 MODEL_BY_SCHEMA: dict[str, type[BaseModel]] = {
     "assessment_anchor.schema.json": AssessmentAnchor,
     "behavioral_daily_record.schema.json": BehavioralDailyRecord,

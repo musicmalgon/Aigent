@@ -12,6 +12,8 @@ services/ai/data/reports/
 services/ai/**/outputs/
 services/ai/**/checkpoints/
 services/ai/**/models/
+!services/ai/src/remind_ai/models/
+!services/ai/src/remind_ai/models/**
 services/ai/artifacts/
 
 # Model artifacts

@@ -27,15 +27,23 @@ class LabelEncoding:
     id2label: Mapping[int, str]
 
 
-def build_label_encoding(samples: Sequence[EmotionSample]) -> LabelEncoding:
+def build_label_encoding(
+    samples: Sequence[EmotionSample], *, classes: Sequence[str] | None = None
+) -> LabelEncoding:
     """Build a deterministic mapping compatible with the TF-IDF class order."""
 
-    classes = tuple(sorted({sample.label for sample in samples}))
-    if len(classes) < 2:
+    observed = {sample.label for sample in samples}
+    ordered_classes = tuple(classes) if classes is not None else tuple(sorted(observed))
+    if len(ordered_classes) < 2:
         raise TransformerDatasetError("at least two emotion.type classes are required")
-    label2id = {label: index for index, label in enumerate(classes)}
+    if (
+        len(set(ordered_classes)) != len(ordered_classes)
+        or set(ordered_classes) != observed
+    ):
+        raise TransformerDatasetError("explicit label classes do not match the samples")
+    label2id = {label: index for index, label in enumerate(ordered_classes)}
     return LabelEncoding(
-        classes=classes,
+        classes=ordered_classes,
         label2id=label2id,
         id2label={index: label for label, index in label2id.items()},
     )

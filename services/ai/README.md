@@ -3,6 +3,9 @@
 > The six-class coarse-emotion runtime and API are documented in
 > [`docs/coarse_emotion_inference.md`](docs/coarse_emotion_inference.md). The
 > existing four-label `EmotionAnalysis` contract remains supported.
+>
+> Six-class training, dry-run, and artifact packaging are documented in
+> [`docs/transformer_coarse_baseline_guide.md`](docs/transformer_coarse_baseline_guide.md).
 
 Re:Mind AI 파트는 초기 자가 보고 결과를 고정 기준점으로 보관하면서 개인별
 생활 변화와 감정 일기 분석 결과를 결합할 수 있는 데이터 계약과 분석
@@ -25,22 +28,22 @@ Re:Mind AI 파트는 초기 자가 보고 결과를 고정 기준점으로 보�
 - Assessment 정책, Behavioral Baseline 명세, 백엔드 전달 초안
 - 스키마, 인터페이스, 합성 데이터를 검증하는 테스트
 
-실제 AI Hub 데이터, 모델 다운로드·학습 결과, Behavioral Baseline 계산 알고리즘,
-확정 임계값, LLM 설명 생성, 백엔드 API는 포함하지 않습니다. Transformer 코드는
-로컬 실행 준비까지만 제공하며 성능 수치는 실제 학습 전에는 작성하지 않습니다.
+실제 AI Hub 데이터와 모델 가중치, Behavioral Baseline 계산 알고리즘, 확정 임계값,
+LLM 설명 생성, 백엔드 API는 포함하지 않습니다. 검증된 coarse Transformer 실험
+결과와 재현 절차는 `docs/transformer_coarse_baseline_guide.md`에 기록합니다.
 
 ## 디렉터리 구조
 
 ```text
-ai/
+services/ai/
 ├── data/
 │   ├── evaluation/       # 사람이 검토할 합성 외부 평가셋 초안
 │   ├── processed/        # 로컬 전처리 데이터(커밋 금지)
 │   ├── raw/              # 로컬 원본 데이터(커밋 금지)
 │   └── synthetic/        # 합성 생활 시나리오
-├── docs/
-│   ├── schemas/          # 백엔드 전달용 JSON Schema
-│   └── tasks/            # 작업 명세
+├── config/               # 검토 가능한 라벨 매핑
+├── docs/                 # 실행·평가·연동 가이드
+├── scripts/              # 로컬 학습 진입점
 ├── src/
 │   ├── emotion/          # 감정 분석 공통 인터페이스와 구현 뼈대
 │   ├── signal/           # Reason Code와 신호 결합 뼈대
@@ -60,11 +63,12 @@ Python 3.11 이상을 기준으로 합니다. 현재 저장소 경로의 `:`는 
 cd /path/to/Aigent
 python3 -m venv "$HOME/.venvs/remind-ai"
 source "$HOME/.venvs/remind-ai/bin/activate"
-python -m pip install -r ai/requirements-dev.txt
-python -m pytest -q ai/tests
-python -m ruff check ai/src ai/tests
-python -m mypy ai/src
-python -m compileall -q ai/src ai/tests
+python -m pip install -r services/ai/requirements-dev.txt
+export PYTHONPATH=services
+python -m pytest -q
+python -m ruff check services/ai/src services/ai/tests services/ai/scripts
+python -m mypy services/ai/src
+python -m compileall -q services/ai/src services/ai/tests
 python -c "import ai.src.signal; import ai.src.schemas"
 ```
 
@@ -72,17 +76,16 @@ python -c "import ai.src.signal; import ai.src.schemas"
 것입니다. 이번 기반 구축 작업에서는 기존 저장소를 이동하거나 이름을 바꾸지
 않았습니다.
 
-공식 Python 패키지 경로는 저장소 루트 기준 `ai.src`입니다. 내부 모듈은
-상대 import를 사용하므로 `ai/` 디렉터리에서의 임시 실행
-`python -c "import src.signal"`도 동작하지만, 백엔드 연동과 테스트 코드는
-`ai.src` 경로를 사용합니다.
+공식 Python 패키지 경로는 `ai.src`입니다. 저장소 루트에서
+`PYTHONPATH=services`를 설정하면 학습 스크립트, 백엔드 연동, 테스트가 같은 import
+경로를 사용합니다.
 
 `requirements.txt`는 Pydantic과 TF-IDF 추론 의존성을,
 `requirements-dev.txt`는 테스트·정적 검사 도구를 포함합니다. Transformer
 구현을 실제로 연결하는 단계에서만 CPU 추론용 선택 의존성을 설치합니다.
 
 ```bash
-python -m pip install -r ai/requirements-transformer.txt
+python -m pip install -r services/ai/requirements-transformer.txt
 ```
 
 GPU 가속 환경은 운영 플랫폼과 드라이버에 맞는 PyTorch 설치 방법을 별도로
@@ -123,7 +126,8 @@ TF-IDF의 joblib 파일은 pickle 기반이므로 로드하는 것만으로 임�
 
 1. 모델과 데이터의 라이선스·사용 조건을 확인합니다.
 2. 확정된 감정 라벨과 데이터 분할을 재사용합니다.
-3. `docs/transformer_baseline_guide.md`의 dry-run을 먼저 수행합니다.
+3. 60-class는 `docs/transformer_baseline_guide.md`, 6-class는
+   `docs/transformer_coarse_baseline_guide.md`의 dry-run을 먼저 수행합니다.
 4. 선택 의존성 환경에서 별도의 학습 실험을 수행합니다.
 5. 외부 평가셋과 오류 사례를 사람이 검토합니다.
 6. 배포 후보의 버전과 라벨 매핑을 고정한 뒤 공통 `EmotionAnalysis`

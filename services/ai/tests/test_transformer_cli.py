@@ -17,8 +17,8 @@ from ai.src.remind_ai.data.group_split import select_group_safe_split
 torch = pytest.importorskip("torch")
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT_PATH = REPOSITORY_ROOT / "ai" / "scripts" / "train_transformer_baseline.py"
+AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_PATH = AI_SERVICE_ROOT / "scripts" / "train_transformer_baseline.py"
 
 
 @pytest.fixture(scope="module")
@@ -109,6 +109,30 @@ def _records() -> list[dict[str, object]]:
     return records
 
 
+def _coarse_records() -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    fine_labels = ("E60", "E30", "E50", "E10", "E20", "E40")
+    for profile in range(8):
+        for label_index, label in enumerate(fine_labels):
+            records.append(
+                {
+                    "profile": {"emotion": {"type": label}},
+                    "talk": {
+                        "content": {
+                            "HS01": f"COARSE USER TEXT {profile} {label_index}",
+                            "HS02": "COARSE SECOND TURN",
+                            "HS03": "",
+                        },
+                        "id": {
+                            "talk-id": f"COARSE-RAW-{profile}-{label_index}",
+                            "profile-id": f"COARSE-PROFILE-{profile}",
+                        },
+                    },
+                }
+            )
+    return records
+
+
 def _prepare_inputs(
     module: ModuleType, tmp_path: Path
 ) -> tuple[Path, Path, Path, Path]:
@@ -148,6 +172,53 @@ def _prepare_inputs(
                     "accuracy": 0.333624,
                     "macro_f1": 0.317472,
                     "weighted_f1": 0.342856,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return train_path, validation_path, tfidf_dir, output_dir
+
+
+def _prepare_coarse_inputs(
+    module: ModuleType, tmp_path: Path
+) -> tuple[Path, Path, Path, Path]:
+    train_path = tmp_path / "coarse_training.json"
+    validation_path = tmp_path / "coarse_validation.json"
+    tfidf_dir = tmp_path / "tfidf-coarse-source"
+    output_dir = tmp_path / "transformer-coarse"
+    records = _coarse_records()
+    train_path.write_text(json.dumps(records[:24]), encoding="utf-8")
+    validation_path.write_text(json.dumps(records[24:]), encoding="utf-8")
+    samples = [
+        *load_json_samples(train_path, "official_train"),
+        *load_json_samples(validation_path, "official_validation"),
+    ]
+    split = select_group_safe_split(samples, random_state=42, candidate_count=200)
+    partitions = {
+        name: split.samples_for(samples, name)
+        for name in ("train", "validation", "test")
+    }
+    summary = module._split_summary(samples, partitions, split)
+    summary["random_state"] = 42
+    summary["requested_candidate_count"] = 200
+    tfidf_dir.mkdir()
+    (tfidf_dir / "run_config.json").write_text(
+        json.dumps({"random_state": 42, "candidate_count": 200}), encoding="utf-8"
+    )
+    (tfidf_dir / "split_summary.json").write_text(
+        json.dumps(summary), encoding="utf-8"
+    )
+    (tfidf_dir / "validation_metrics.json").write_text(
+        json.dumps({"selected_model": "char_tfidf"}), encoding="utf-8"
+    )
+    (tfidf_dir / "test_metrics.json").write_text(
+        json.dumps(
+            {
+                "metrics": {
+                    "accuracy": 0.397205,
+                    "macro_f1": 0.376819,
+                    "weighted_f1": 0.410490,
                 }
             }
         ),
@@ -221,6 +292,117 @@ def test_dry_run_reuses_split_and_writes_safe_artifacts(
     assert "PRIVATE-RAW" not in serialized
     assert str(train_path) not in serialized
     assert not (output_dir / "test_metrics.json").exists()
+
+
+def test_coarse_dry_run_uses_six_labels_and_isolated_output(
+    transformer_script: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    train_path, validation_path, tfidf_dir, output_dir = _prepare_coarse_inputs(
+        transformer_script, tmp_path
+    )
+    output_dir.mkdir()
+    sentinel = output_dir / "existing-fine-output.sentinel"
+    sentinel.write_text("do not overwrite", encoding="utf-8")
+    tokenizer = TinyTokenizer()
+    classifier_sizes: list[int] = []
+
+    monkeypatch.setattr(transformer_script, "load_tokenizer", lambda name: tokenizer)
+
+    def load_classifier(config: Any, labels: Any) -> TinyClassifier:
+        del config
+        classifier_sizes.append(len(labels.classes))
+        return TinyClassifier(len(labels.classes))
+
+    monkeypatch.setattr(transformer_script, "load_classifier", load_classifier)
+    monkeypatch.setattr(transformer_script, "create_data_collator", lambda value: _collate)
+    code = transformer_script.main(
+        [
+            "--train-json",
+            str(train_path),
+            "--validation-json",
+            str(validation_path),
+            "--tfidf-output-dir",
+            str(tfidf_dir),
+            "--output-dir",
+            str(output_dir),
+            "--model-name",
+            "synthetic-model",
+            "--device",
+            "cpu",
+            "--label-level",
+            "coarse",
+            "--disable-progress-bar",
+            "--dry-run",
+            "--dry-run-samples",
+            "6",
+        ]
+    )
+    assert code == 0
+    assert classifier_sizes == [6]
+    assert sentinel.read_text(encoding="utf-8") == "do not overwrite"
+    dry_output = output_dir / "dry-run"
+    for name in (
+        "split_summary.json",
+        "label_classes.json",
+        "label_mapping.json",
+        "mapping_validation.json",
+        "run_config.json",
+        "dry_run_summary.json",
+        "comparison_with_fine_baseline.json",
+        "experiment_summary.md",
+        "README.md",
+    ):
+        assert (dry_output / name).is_file()
+    labels = json.loads((dry_output / "label_classes.json").read_text(encoding="utf-8"))
+    assert labels["classes"] == ["기쁨", "불안", "당황", "분노", "슬픔", "상처"]
+    report = json.loads(
+        (dry_output / "mapping_validation.json").read_text(encoding="utf-8")
+    )
+    assert report["coarse_label_count"] == 6
+    assert report["original_sample_count"] == 48
+    assert report["mapped_sample_count"] == 48
+    assert report["sample_count_preserved"] is True
+    summary = json.loads((dry_output / "dry_run_summary.json").read_text(encoding="utf-8"))
+    assert summary["model_classifier_num_labels"] == 6
+    assert summary["smoke_backward_completed"] is True
+    assert summary["temporary_checkpoint_saved_and_reloaded"] is True
+    assert summary["progress_bar_enabled"] is False
+    assert not (dry_output / "checkpoints").exists()
+    run_config = json.loads(
+        (dry_output / "run_config.json").read_text(encoding="utf-8")
+    )
+    assert run_config["model_version"] == "klue-roberta-coarse-v1"
+    assert run_config["max_length"] == 128
+
+
+def test_coarse_mode_rejects_max_length_outside_inference_contract(
+    transformer_script: ModuleType,
+    tmp_path: Path,
+) -> None:
+    train_path, validation_path, tfidf_dir, output_dir = _prepare_coarse_inputs(
+        transformer_script, tmp_path
+    )
+    arguments = transformer_script._build_parser().parse_args(
+        [
+            "--train-json",
+            str(train_path),
+            "--validation-json",
+            str(validation_path),
+            "--tfidf-output-dir",
+            str(tfidf_dir),
+            "--output-dir",
+            str(output_dir),
+            "--label-level",
+            "coarse",
+            "--max-length",
+            "256",
+            "--dry-run",
+        ]
+    )
+    with pytest.raises(transformer_script.TransformerBaselineFailure, match="128"):
+        transformer_script.run(arguments)
 
 
 def test_relative_paths_and_split_mismatch_fail_without_path_disclosure(

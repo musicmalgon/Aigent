@@ -3,7 +3,7 @@
 ## 상태와 계약 원칙
 
 - 상태: 1차 개발 계약 초안
-- 기준 모델: `ai/src/schemas.py`와 `ai/docs/schemas/*.schema.json`
+- 기준 모델: `services/ai/src/schemas.py`와 `packages/contracts/schemas/*.schema.json`
 - 현재 알고리즘 임계값과 판정 규칙: 확정 전
 
 백엔드는 초기 자가 보고 원본, 생활 기록 원본, 감정 분석 결과, Re:Mind의

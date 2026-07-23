@@ -8,6 +8,10 @@ class UserCreate(BaseModel):
     password: str
 
 
+class UserTypeUpdate(BaseModel):
+    user_type: UserType
+
+
 class UserRead(BaseModel):
     id: uuid.UUID
     email: EmailStr

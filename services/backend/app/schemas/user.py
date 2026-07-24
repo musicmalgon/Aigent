@@ -1,5 +1,7 @@
 import uuid
-from pydantic import BaseModel, EmailStr
+
+from pydantic import BaseModel, ConfigDict, EmailStr
+
 from app.models.user import UserType
 
 
@@ -13,9 +15,8 @@ class UserTypeUpdate(BaseModel):
 
 
 class UserRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     email: EmailStr
     user_type: UserType | None = None
-
-    class Config:
-        from_attributes = True

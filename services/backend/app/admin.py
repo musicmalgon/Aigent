@@ -1,4 +1,5 @@
 from sqladmin import ModelView
+
 from app.models.user import User
 
 

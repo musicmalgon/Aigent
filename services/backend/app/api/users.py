@@ -10,7 +10,9 @@ router = APIRouter()
 
 
 @router.get("/users/me", response_model=UserRead)
-def read_current_user(current_user: User = Depends(get_current_user)):
+def read_current_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
     return current_user
 
 
@@ -19,7 +21,7 @@ def update_user_type(
     payload: UserTypeUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> User:
     current_user.user_type = payload.user_type
     db.commit()
     db.refresh(current_user)

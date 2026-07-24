@@ -28,3 +28,12 @@ JSON Schema enforces field shape, exact probability keys, label/id mapping,
 and uncertainty nullability. Probability sum, argmax/confidence equality, and
 top-prediction ordering are arithmetic cross-field invariants that JSON Schema
 cannot express; service runtime models must enforce them before serialization.
+
+The deterministic backend risk engine adds:
+
+- `burnout_risk_evaluation_request.schema.json`
+- `burnout_risk_evaluation_response.schema.json`
+
+These contracts use the existing `snake_case` behavioral metric names. The
+result is a versioned, non-diagnostic signal with explainable factor codes; it
+does not contain raw user text or a medical interpretation.

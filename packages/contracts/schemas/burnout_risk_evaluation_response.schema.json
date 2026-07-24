@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "burnout_risk_evaluation_response.schema.json",
+  "title": "BurnoutRiskEvaluationResponse",
+  "description": "Explainable output from a deterministic, non-diagnostic burnout risk signal evaluation.",
+  "$comment": "The example is synthetic(합성). The score and levels are MVP product policy, not clinical thresholds or disease probabilities. Informational factors explain data limitations and do not contribute to the score.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "score",
+    "level",
+    "is_provisional",
+    "baseline_status",
+    "data_quality",
+    "category_scores",
+    "factors",
+    "summary",
+    "engine_version"
+  ],
+  "properties": {
+    "score": {
+      "$ref": "#/$defs/score"
+    },
+    "level": {
+      "$ref": "#/$defs/riskLevel"
+    },
+    "is_provisional": {
+      "type": "boolean"
+    },
+    "baseline_status": {
+      "$ref": "#/$defs/baselineStatus"
+    },
+    "data_quality": {
+      "$ref": "#/$defs/dataQuality"
+    },
+    "category_scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sleep": {
+          "$ref": "#/$defs/score"
+        },
+        "workload": {
+          "$ref": "#/$defs/score"
+        },
+        "recovery": {
+          "$ref": "#/$defs/score"
+        },
+        "emotion": {
+          "$ref": "#/$defs/score"
+        },
+        "subjective": {
+          "$ref": "#/$defs/score"
+        }
+      }
+    },
+    "factors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/riskFactor"
+      }
+    },
+    "summary": {
+      "$ref": "#/$defs/riskSummary"
+    },
+    "engine_version": {
+      "type": "string",
+      "const": "burnout-risk-rules-v1"
+    }
+  },
+  "$defs": {
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "riskLevel": {
+      "type": "string",
+      "enum": [
+        "low",
+        "moderate",
+        "high",
+        "very_high"
+      ]
+    },
+    "baselineStatus": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "insufficient",
+        "missing"
+      ]
+    },
+    "dataQuality": {
+      "type": "string",
+      "enum": [
+        "sufficient",
+        "insufficient"
+      ]
+    },
+    "factorCategory": {
+      "type": "string",
+      "enum": [
+        "sleep",
+        "workload",
+        "recovery",
+        "emotion",
+        "subjective",
+        "data_quality"
+      ]
+    },
+    "factorKind": {
+      "type": "string",
+      "enum": [
+        "risk",
+        "informational"
+      ]
+    },
+    "factorCode": {
+      "type": "string",
+      "enum": [
+        "sleep_decrease",
+        "workload_increase",
+        "schedule_overload",
+        "rest_decrease",
+        "exercise_decrease",
+        "negative_emotion_increase",
+        "high_negative_emotion",
+        "subjective_stress",
+        "subjective_fatigue",
+        "insufficient_baseline",
+        "insufficient_data"
+      ]
+    },
+    "riskFactor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "category",
+        "kind",
+        "severity",
+        "weight",
+        "contribution",
+        "observed_value",
+        "baseline_value",
+        "change_percent",
+        "message_key"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/factorCode"
+        },
+        "category": {
+          "$ref": "#/$defs/factorCategory"
+        },
+        "kind": {
+          "$ref": "#/$defs/factorKind"
+        },
+        "severity": {
+          "$ref": "#/$defs/probability"
+        },
+        "weight": {
+          "$ref": "#/$defs/probability"
+        },
+        "contribution": {
+          "$ref": "#/$defs/score"
+        },
+        "observed_value": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "baseline_value": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "change_percent": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "message_key": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^risk\\."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "informational"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "severity": {
+                "const": 0
+              },
+              "weight": {
+                "const": 0
+              },
+              "contribution": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "risk"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "contribution": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 100
+              }
+            }
+          }
+        }
+      ]
+    },
+    "riskSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "top_factor_codes",
+        "available_signal_count",
+        "missing_signal_count",
+        "available_category_count",
+        "missing_category_count"
+      ],
+      "properties": {
+        "top_factor_codes": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/factorCode"
+          }
+        },
+        "available_signal_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "missing_signal_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "available_category_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "missing_category_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "score": 0,
+      "level": "low",
+      "is_provisional": false,
+      "baseline_status": "ready",
+      "data_quality": "sufficient",
+      "category_scores": {
+        "sleep": 0,
+        "workload": 0,
+        "recovery": 0,
+        "emotion": 0,
+        "subjective": 0
+      },
+      "factors": [],
+      "summary": {
+        "top_factor_codes": [],
+        "available_signal_count": 7,
+        "missing_signal_count": 0,
+        "available_category_count": 5,
+        "missing_category_count": 0
+      },
+      "engine_version": "burnout-risk-rules-v1"
+    }
+  ]
+}

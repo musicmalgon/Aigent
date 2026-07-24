@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Generator
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from alembic import command
 
 TEST_JWT_SECRET = "test-only-secret-key-with-at-least-32-characters"
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
+SERVICES_ROOT = BACKEND_ROOT.parent
+sys.path.insert(0, str(SERVICES_ROOT))
 
 # The application has validated module-level settings. Tests provide explicit,
 # non-production values before importing any app module.
@@ -68,6 +71,20 @@ def app_settings(database_url: str) -> Settings:
             "sqladmin_path": "/admin",
         }
     )
+
+
+@pytest.fixture
+def db_session(
+    migrated_engine: Engine,
+) -> Generator[Session, None, None]:
+    session_factory = sessionmaker(
+        bind=migrated_engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    with session_factory() as session:
+        yield session
+        session.rollback()
 
 
 @pytest.fixture

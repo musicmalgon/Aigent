@@ -1,0 +1,369 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "burnout_risk_evaluation_request.schema.json",
+  "title": "BurnoutRiskEvaluationRequest",
+  "description": "Request for a deterministic, non-diagnostic burnout risk signal evaluation against an optional personal baseline.",
+  "$comment": "All example values are synthetic(합성). Missing values and observed zero are distinct. Probability-sum arithmetic is enforced by the runtime Pydantic model because standard JSON Schema cannot express it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "current"
+  ],
+  "properties": {
+    "current": {
+      "$ref": "#/$defs/currentRiskSignals"
+    },
+    "baseline": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/personalBaseline"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "$defs": {
+    "dayMinutes": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1440
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "subjectiveRating": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "emotionProbabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "기쁨",
+        "불안",
+        "당황",
+        "분노",
+        "슬픔",
+        "상처"
+      ],
+      "properties": {
+        "기쁨": {
+          "$ref": "#/$defs/probability"
+        },
+        "불안": {
+          "$ref": "#/$defs/probability"
+        },
+        "당황": {
+          "$ref": "#/$defs/probability"
+        },
+        "분노": {
+          "$ref": "#/$defs/probability"
+        },
+        "슬픔": {
+          "$ref": "#/$defs/probability"
+        },
+        "상처": {
+          "$ref": "#/$defs/probability"
+        }
+      }
+    },
+    "currentRiskSignals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sleep_minutes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dayMinutes"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "work_or_study_minutes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dayMinutes"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rest_minutes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dayMinutes"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exercise_minutes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dayMinutes"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schedule_count": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonNegativeInteger"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "subjective_stress": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/subjectiveRating"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "subjective_fatigue": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/subjectiveRating"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "emotion_probabilities": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/emotionProbabilities"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "emotion_confidence": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/probability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "emotion_uncertain": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "anyOf": [
+              {
+                "properties": {
+                  "emotion_confidence": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "emotion_confidence"
+                ]
+              },
+              {
+                "properties": {
+                  "emotion_uncertain": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "emotion_uncertain"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "emotion_probabilities"
+            ],
+            "properties": {
+              "emotion_probabilities": {
+                "$ref": "#/$defs/emotionProbabilities"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "personalBaseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_days"
+      ],
+      "properties": {
+        "sleep_minutes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dayMinutes"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "work_or_study_minutes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dayMinutes"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rest_minutes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dayMinutes"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exercise_minutes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/dayMinutes"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schedule_count": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/nonNegativeNumber"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "subjective_stress": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/subjectiveRating"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "subjective_fatigue": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/subjectiveRating"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "negative_emotion_probability": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/probability"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sample_days": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "current": {
+        "sleep_minutes": 270,
+        "work_or_study_minutes": 540,
+        "rest_minutes": 20,
+        "exercise_minutes": 0,
+        "schedule_count": 6,
+        "subjective_stress": 8,
+        "subjective_fatigue": 7,
+        "emotion_probabilities": {
+          "기쁨": 0.03,
+          "불안": 0.42,
+          "당황": 0.11,
+          "분노": 0.08,
+          "슬픔": 0.25,
+          "상처": 0.11
+        },
+        "emotion_confidence": 0.42,
+        "emotion_uncertain": true
+      },
+      "baseline": {
+        "sleep_minutes": 420,
+        "work_or_study_minutes": 300,
+        "rest_minutes": 90,
+        "exercise_minutes": 25,
+        "schedule_count": 3,
+        "subjective_stress": 4,
+        "subjective_fatigue": 3,
+        "negative_emotion_probability": 0.38,
+        "sample_days": 18
+      }
+    }
+  ]
+}

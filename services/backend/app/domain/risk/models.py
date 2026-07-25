@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -61,25 +61,25 @@ class _ContractModel(BaseModel):
     )
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     LOW = "low"
     MODERATE = "moderate"
     HIGH = "high"
     VERY_HIGH = "very_high"
 
 
-class BaselineStatus(str, Enum):
+class BaselineStatus(StrEnum):
     READY = "ready"
     INSUFFICIENT = "insufficient"
     MISSING = "missing"
 
 
-class DataQuality(str, Enum):
+class DataQuality(StrEnum):
     SUFFICIENT = "sufficient"
     INSUFFICIENT = "insufficient"
 
 
-class RiskCategory(str, Enum):
+class RiskCategory(StrEnum):
     SLEEP = "sleep"
     WORKLOAD = "workload"
     RECOVERY = "recovery"
@@ -87,7 +87,7 @@ class RiskCategory(str, Enum):
     SUBJECTIVE = "subjective"
 
 
-class FactorCategory(str, Enum):
+class FactorCategory(StrEnum):
     SLEEP = "sleep"
     WORKLOAD = "workload"
     RECOVERY = "recovery"
@@ -96,12 +96,12 @@ class FactorCategory(str, Enum):
     DATA_QUALITY = "data_quality"
 
 
-class FactorKind(str, Enum):
+class FactorKind(StrEnum):
     RISK = "risk"
     INFORMATIONAL = "informational"
 
 
-class FactorCode(str, Enum):
+class FactorCode(StrEnum):
     SLEEP_DECREASE = "sleep_decrease"
     WORKLOAD_INCREASE = "workload_increase"
     SCHEDULE_OVERLOAD = "schedule_overload"
@@ -124,7 +124,7 @@ class EmotionProbabilities(_ContractModel):
     hurt: Probability = Field(alias="상처")
 
     @model_validator(mode="after")
-    def validate_probability_sum(self) -> "EmotionProbabilities":
+    def validate_probability_sum(self) -> EmotionProbabilities:
         if abs(sum(self.as_tuple()) - 1.0) > 1e-6:
             raise ValueError("emotion probabilities must sum to 1 within 0.000001")
         return self
@@ -157,7 +157,7 @@ class CurrentRiskSignals(_ContractModel):
     emotion_uncertain: StrictBool | None = None
 
     @model_validator(mode="after")
-    def validate_emotion_metadata(self) -> "CurrentRiskSignals":
+    def validate_emotion_metadata(self) -> CurrentRiskSignals:
         if self.emotion_probabilities is None and (
             self.emotion_confidence is not None
             or self.emotion_uncertain is not None
@@ -198,7 +198,7 @@ class RiskFactor(_ContractModel):
     message_key: Annotated[str, Field(min_length=1, pattern=r"^risk\.")]
 
     @model_validator(mode="after")
-    def validate_factor_kind(self) -> "RiskFactor":
+    def validate_factor_kind(self) -> RiskFactor:
         if self.kind is FactorKind.INFORMATIONAL and (
             self.severity != 0 or self.weight != 0 or self.contribution != 0
         ):
@@ -216,7 +216,7 @@ class RiskSummary(_ContractModel):
     missing_category_count: Annotated[int, Field(ge=0, le=5)]
 
     @model_validator(mode="after")
-    def validate_counts(self) -> "RiskSummary":
+    def validate_counts(self) -> RiskSummary:
         if self.available_signal_count + self.missing_signal_count != 7:
             raise ValueError("available and missing signal counts must total 7")
         if self.available_category_count + self.missing_category_count != 5:
@@ -240,7 +240,7 @@ class BurnoutRiskEvaluationResponse(_ContractModel):
     engine_version: Literal["burnout-risk-rules-v1"]
 
     @model_validator(mode="after")
-    def validate_result_invariants(self) -> "BurnoutRiskEvaluationResponse":
+    def validate_result_invariants(self) -> BurnoutRiskEvaluationResponse:
         expected_order = sorted(
             self.factors,
             key=lambda item: (-item.contribution, item.code.value),

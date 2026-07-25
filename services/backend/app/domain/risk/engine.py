@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable
 
 from .config import DEFAULT_CONFIG, RiskEngineConfig
 from .models import (
@@ -45,7 +45,7 @@ def _interpolate(
 ) -> float:
     if value <= points[0][0]:
         return points[0][1]
-    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+    for (x0, y0), (x1, y1) in zip(points, points[1:], strict=False):
         if value <= x1:
             ratio = (value - x0) / (x1 - x0)
             return _clamp(y0 + ratio * (y1 - y0))
@@ -157,7 +157,11 @@ def _workload_factors(
         ),
         (
             FactorCode.SCHEDULE_OVERLOAD,
-            float(current.schedule_count) if current.schedule_count is not None else None,
+            (
+                float(current.schedule_count)
+                if current.schedule_count is not None
+                else None
+            ),
             baseline.schedule_count if baseline else None,
             config.schedule_fallback_reference_count,
             config.workload_inner_weights[1],
@@ -175,7 +179,7 @@ def _workload_factors(
         fallback_reference,
         _,
         message_key,
-    ) in zip(weights, present):
+    ) in zip(weights, present, strict=False):
         assert observed is not None
         fallback_fraction = max(
             0.0,
@@ -248,7 +252,7 @@ def _recovery_factors(
         severity_cap,
         fallback_cap,
         message_key,
-    ) in zip(weights, present):
+    ) in zip(weights, present, strict=False):
         assert observed is not None
         fallback_fraction = max(
             0.0,
@@ -364,6 +368,7 @@ def _subjective_factors(
     for weight, (code, observed, baseline_value, _, message_key) in zip(
         weights,
         present,
+        strict=False,
     ):
         assert observed is not None
         if baseline_value is None:

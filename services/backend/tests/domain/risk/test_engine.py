@@ -2,22 +2,24 @@ from __future__ import annotations
 
 import json
 from dataclasses import FrozenInstanceError, replace
+from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
 
-from backend.app.domain.risk import (
+from app.domain.risk import (
+    DEFAULT_CONFIG,
     BaselineStatus,
     BurnoutRiskEngine,
     BurnoutRiskEvaluationRequest,
     BurnoutRiskEvaluationResponse,
     CurrentRiskSignals,
-    DEFAULT_CONFIG,
     DataQuality,
     EmotionProbabilities,
     FactorCode,
     FactorKind,
     PersonalBaseline,
+    RiskCategory,
     RiskLevel,
     risk_level_for_score,
 )
@@ -51,7 +53,7 @@ def full_current(**overrides: object) -> CurrentRiskSignals:
         "emotion_uncertain": False,
     }
     values.update(overrides)
-    return CurrentRiskSignals(**values)
+    return CurrentRiskSignals.model_validate(values)
 
 
 def full_baseline(**overrides: object) -> PersonalBaseline:
@@ -67,7 +69,7 @@ def full_baseline(**overrides: object) -> PersonalBaseline:
         "sample_days": 18,
     }
     values.update(overrides)
-    return PersonalBaseline(**values)
+    return PersonalBaseline.model_validate(values)
 
 
 def factor_codes(result: BurnoutRiskEvaluationResponse) -> list[FactorCode]:
@@ -198,7 +200,7 @@ def test_high_joy_and_no_negative_increase_adds_no_emotion_risk() -> None:
     )
 
     assert FactorCode.NEGATIVE_EMOTION_INCREASE not in factor_codes(result)
-    assert result.category_scores["emotion"] == 0
+    assert result.category_scores[RiskCategory.EMOTION] == 0
 
 
 def test_lower_emotion_confidence_reduces_contribution() -> None:
@@ -223,8 +225,11 @@ def test_lower_emotion_confidence_reduces_contribution() -> None:
         baseline,
     )
 
-    assert low.category_scores["emotion"] < high.category_scores["emotion"]
-    assert low.category_scores["emotion"] > 0
+    assert (
+        low.category_scores[RiskCategory.EMOTION]
+        < high.category_scores[RiskCategory.EMOTION]
+    )
+    assert low.category_scores[RiskCategory.EMOTION] > 0
 
 
 def test_emotion_uncertainty_reduces_contribution() -> None:
@@ -249,7 +254,10 @@ def test_emotion_uncertainty_reduces_contribution() -> None:
         baseline,
     )
 
-    assert uncertain.category_scores["emotion"] < certain.category_scores["emotion"]
+    assert (
+        uncertain.category_scores[RiskCategory.EMOTION]
+        < certain.category_scores[RiskCategory.EMOTION]
+    )
 
 
 def test_missing_emotion_confidence_uses_nonzero_floor() -> None:
@@ -261,7 +269,7 @@ def test_missing_emotion_confidence_uses_nonzero_floor() -> None:
         ),
     )
 
-    assert result.category_scores["emotion"] > 0
+    assert result.category_scores[RiskCategory.EMOTION] > 0
 
 
 @pytest.mark.parametrize(
@@ -413,7 +421,7 @@ def test_invalid_emotion_probabilities_are_rejected(
 )
 def test_invalid_current_values_are_rejected(values: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
-        CurrentRiskSignals(**values)
+        CurrentRiskSignals.model_validate(values)
 
 
 def test_zero_baseline_never_divides_by_zero() -> None:
@@ -495,7 +503,7 @@ def test_sleep_piecewise_policy(
         PersonalBaseline(sleep_minutes=100, sample_days=14),
     )
 
-    assert result.category_scores["sleep"] == category_score
+    assert result.category_scores[RiskCategory.SLEEP] == category_score
 
 
 def test_exercise_signal_is_capped_even_with_ready_baseline() -> None:
@@ -504,7 +512,7 @@ def test_exercise_signal_is_capped_even_with_ready_baseline() -> None:
         PersonalBaseline(exercise_minutes=30, sample_days=14),
     )
 
-    assert result.category_scores["recovery"] == 30
+    assert result.category_scores[RiskCategory.RECOVERY] == 30
     assert result.level is RiskLevel.MODERATE
 
 
@@ -514,7 +522,7 @@ def test_subjective_signal_cannot_produce_high_result_by_itself() -> None:
         PersonalBaseline(subjective_stress=3, sample_days=14),
     )
 
-    assert result.category_scores["subjective"] == 45
+    assert result.category_scores[RiskCategory.SUBJECTIVE] == 45
     assert result.score == 45
     assert result.level is RiskLevel.MODERATE
 
@@ -564,8 +572,8 @@ def test_engine_is_deterministic_and_field_order_independent() -> None:
         sample_days=14,
     )
 
-    first = evaluate(CurrentRiskSignals(**first_payload), baseline)
-    second = evaluate(CurrentRiskSignals(**second_payload), baseline)
+    first = evaluate(CurrentRiskSignals.model_validate(first_payload), baseline)
+    second = evaluate(CurrentRiskSignals.model_validate(second_payload), baseline)
 
     assert first == second
     assert first.model_dump_json() == second.model_dump_json()
@@ -603,7 +611,7 @@ def test_engine_version_and_json_serialization_are_stable() -> None:
 
 def test_config_is_immutable() -> None:
     with pytest.raises(FrozenInstanceError):
-        DEFAULT_CONFIG.minimum_baseline_days = 1
+        cast(Any, DEFAULT_CONFIG).minimum_baseline_days = 1
 
 
 def test_invalid_config_weight_sum_is_rejected() -> None:

@@ -1,4 +1,5 @@
 from enum import StrEnum
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,6 +27,28 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, ge=1, le=10080)
     sqladmin_enabled: bool = False
     sqladmin_path: str = "/admin"
+    ai_service_base_url: str = "http://127.0.0.1:8001"
+    ai_service_connect_timeout_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        le=300,
+    )
+    ai_service_read_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        le=300,
+    )
+    ai_service_write_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        le=300,
+    )
+    ai_service_pool_timeout_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        le=300,
+    )
+    ai_service_auth_token: SecretStr | None = None
 
     @field_validator("database_url")
     @classmethod
@@ -52,6 +75,35 @@ class Settings(BaseSettings):
         if normalized in {"/docs", "/redoc", "/openapi.json"}:
             raise ValueError("SQLADMIN_PATH cannot shadow an application route")
         return normalized
+
+    @field_validator("ai_service_base_url")
+    @classmethod
+    def validate_ai_service_base_url(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        parsed = urlsplit(normalized)
+        if (
+            not normalized
+            or parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or any(character.isspace() for character in normalized)
+        ):
+            raise ValueError(
+                "AI_SERVICE_BASE_URL must be an HTTP(S) URL without "
+                "credentials, query, or fragment"
+            )
+        return normalized
+
+    @field_validator("ai_service_auth_token", mode="before")
+    @classmethod
+    def normalize_ai_service_auth_token(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":

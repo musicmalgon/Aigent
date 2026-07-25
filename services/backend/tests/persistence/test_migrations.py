@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import logging
 from pathlib import Path
 
 from alembic.config import Config
@@ -19,6 +20,17 @@ EXPECTED_TABLES = {
     "burnout_risk_evaluations",
     "alembic_version",
 }
+
+
+def test_migration_logging_preserves_existing_loggers(database_url: str) -> None:
+    logger = logging.getLogger("app.clients.ai")
+    original_disabled = logger.disabled
+    logger.disabled = False
+    try:
+        command.upgrade(make_alembic_config(database_url), "head")
+        assert logger.disabled is False
+    finally:
+        logger.disabled = original_disabled
 
 
 def test_persistence_migration_schema(database_url: str) -> None:

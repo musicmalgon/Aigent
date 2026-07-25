@@ -8,7 +8,7 @@ from typing import Any
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 from jsonschema.validators import validator_for  # type: ignore[import-untyped]
 
-from backend.app.domain.risk import (
+from app.domain.risk import (
     BurnoutRiskEngine,
     BurnoutRiskEvaluationRequest,
     BurnoutRiskEvaluationResponse,
@@ -16,7 +16,6 @@ from backend.app.domain.risk import (
     EmotionProbabilities,
     PersonalBaseline,
 )
-
 
 ROOT = Path(__file__).resolve().parents[5]
 SCHEMA_DIR = ROOT / "packages" / "contracts" / "schemas"

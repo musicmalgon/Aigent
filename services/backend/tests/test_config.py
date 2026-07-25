@@ -32,6 +32,7 @@ def test_development_settings_load() -> None:
 
     assert settings.app_env is AppEnvironment.DEVELOPMENT
     assert settings.database_url.endswith("development.db")
+    assert settings.ai_service_base_url == "http://127.0.0.1:8001"
 
 
 def test_test_settings_use_separate_database() -> None:
@@ -134,6 +135,64 @@ def test_invalid_token_expiration_is_rejected(minutes: int) -> None:
 def test_invalid_sqladmin_path_is_rejected(path: str) -> None:
     with pytest.raises(ValidationError):
         Settings.model_validate(settings_payload(sqladmin_path=path))
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "",
+        "ai.internal",
+        "ftp://ai.internal",
+        "https://user:password@ai.internal",
+        "https://ai.internal?token=private",
+        "https://ai.internal/#fragment",
+    ],
+)
+def test_invalid_ai_service_base_url_is_rejected(base_url: str) -> None:
+    with pytest.raises(ValidationError, match="AI_SERVICE_BASE_URL"):
+        Settings.model_validate(
+            settings_payload(ai_service_base_url=base_url)
+        )
+
+
+def test_ai_service_settings_normalize_url_token_and_timeouts() -> None:
+    settings = Settings.model_validate(
+        settings_payload(
+            ai_service_base_url=" https://ai.internal/prefix/ ",
+            ai_service_connect_timeout_seconds=1.0,
+            ai_service_read_timeout_seconds=45.0,
+            ai_service_write_timeout_seconds=2.0,
+            ai_service_pool_timeout_seconds=0.5,
+            ai_service_auth_token=" dummy-token ",
+        )
+    )
+
+    assert settings.ai_service_base_url == "https://ai.internal/prefix"
+    assert settings.ai_service_connect_timeout_seconds == 1.0
+    assert settings.ai_service_read_timeout_seconds == 45.0
+    assert settings.ai_service_write_timeout_seconds == 2.0
+    assert settings.ai_service_pool_timeout_seconds == 0.5
+    assert settings.ai_service_auth_token is not None
+    assert settings.ai_service_auth_token.get_secret_value() == "dummy-token"
+    assert "dummy-token" not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "ai_service_connect_timeout_seconds",
+        "ai_service_read_timeout_seconds",
+        "ai_service_write_timeout_seconds",
+        "ai_service_pool_timeout_seconds",
+    ],
+)
+@pytest.mark.parametrize("value", [0, -1, 301])
+def test_invalid_ai_service_timeout_is_rejected(
+    field: str,
+    value: float,
+) -> None:
+    with pytest.raises(ValidationError):
+        Settings.model_validate(settings_payload(**{field: value}))
 
 
 def test_database_url_for_logging_hides_password() -> None:

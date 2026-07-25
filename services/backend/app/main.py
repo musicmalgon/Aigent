@@ -3,7 +3,7 @@ from sqladmin import Admin
 from sqlalchemy.engine import Engine
 
 from app.admin import UserAdmin
-from app.api import auth, users
+from app.api import auth, behavioral_records, users
 from app.core.config import Settings, settings
 from app.core.database import create_database_engine
 from app.models import user  # noqa: F401
@@ -29,6 +29,7 @@ def create_app(
 
     application.include_router(auth.router)
     application.include_router(users.router, tags=["users"])
+    application.include_router(behavioral_records.router)
 
     @application.get("/")
     def health_check() -> dict[str, str]:

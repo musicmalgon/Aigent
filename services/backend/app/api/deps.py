@@ -1,12 +1,25 @@
-from fastapi import Depends, HTTPException, status
+from typing import cast
+
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.clients.ai import AIServiceClient
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.user import User
 
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_ai_service_client(request: Request) -> AIServiceClient:
+    ai_client = getattr(request.app.state, "ai_service_client", None)
+    if ai_client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Emotion analysis service is unavailable.",
+        )
+    return cast(AIServiceClient, ai_client)
 
 
 def get_current_user(

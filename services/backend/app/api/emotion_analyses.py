@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -13,17 +15,24 @@ from app.clients.ai import (
     AIServiceConnectionError,
     AIServiceError,
     AIServiceTimeoutError,
-    CoarseEmotionRequest,
 )
 from app.core.database import get_db
 from app.models.user import User
-from app.schemas.emotion_analysis import EmotionAnalysisRead
+from app.repositories.behavioral_records import get_daily_record_by_date
+from app.schemas.emotion_analysis import (
+    EmotionAnalysisCreate,
+    EmotionAnalysisRead,
+)
 from app.services.emotion_analysis import analyze_and_stage_emotion_result
 
 router = APIRouter(
     prefix="/api/v1/emotion-analyses",
     tags=["emotion-analyses"],
 )
+
+
+def _utc_today() -> date:
+    return datetime.now(UTC).date()
 
 
 def _downstream_error(exc: AIServiceError) -> HTTPException:
@@ -57,21 +66,49 @@ def _downstream_error(exc: AIServiceError) -> HTTPException:
     status_code=status.HTTP_201_CREATED,
 )
 async def create_emotion_analysis(
-    payload: CoarseEmotionRequest,
+    payload: EmotionAnalysisCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     ai_client: AIServiceClient = Depends(get_ai_service_client),
 ) -> EmotionAnalysisRead:
     user_id = current_user.id
 
-    # Authentication performs a read using this session. End that transaction
-    # before waiting on the downstream service.
+    if payload.record_date > _utc_today():
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="record_date cannot be in the future.",
+        )
+
+    try:
+        daily_record = get_daily_record_by_date(
+            db,
+            user_id=user_id,
+            record_date=payload.record_date,
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Behavioral record could not be verified.",
+        ) from None
+
+    if daily_record is None:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Behavioral record not found.",
+        )
+
+    # Authentication and ownership verification perform reads using this
+    # session. End that transaction before waiting on the downstream service.
     db.rollback()
     try:
         result = await analyze_and_stage_emotion_result(
             db,
             user_id=user_id,
-            request=payload,
+            record_date=payload.record_date,
+            request=payload.to_ai_request(),
             ai_client=ai_client,
         )
         response = EmotionAnalysisRead.model_validate(result)

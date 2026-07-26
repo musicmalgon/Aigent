@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
 
@@ -21,9 +21,11 @@ PERSISTENCE_LABEL_BY_AI_LABEL = {
 
 def map_ai_response_to_persistence(
     response: CoarseEmotionResponse,
+    *,
+    record_date: date,
 ) -> EmotionResultCreate:
     return EmotionResultCreate(
-        record_date=None,
+        record_date=record_date,
         analyzed_at=datetime.now(UTC),
         model_version=response.model_version,
         predicted_emotion=PERSISTENCE_LABEL_BY_AI_LABEL[
@@ -43,11 +45,15 @@ async def analyze_and_stage_emotion_result(
     session: Session,
     *,
     user_id: str,
+    record_date: date,
     request: CoarseEmotionRequest,
     ai_client: AIServiceClient,
 ) -> EmotionAnalysisResult:
     response = await ai_client.classify_emotion(request)
-    payload = map_ai_response_to_persistence(response)
+    payload = map_ai_response_to_persistence(
+        response,
+        record_date=record_date,
+    )
     return emotion_results.create_emotion_result(
         session,
         user_id=user_id,

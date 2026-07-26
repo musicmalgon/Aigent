@@ -4,13 +4,25 @@ from datetime import date, datetime
 
 from pydantic import model_validator
 
+from app.clients.ai import CoarseEmotionRequest
 from app.schemas.persistence import EmotionLabel, PersistenceSchema, Probability
+
+
+class EmotionAnalysisCreate(CoarseEmotionRequest):
+    record_date: date
+
+    def to_ai_request(self) -> CoarseEmotionRequest:
+        return CoarseEmotionRequest(
+            hs01=self.hs01,
+            hs02=self.hs02,
+            hs03=self.hs03,
+        )
 
 
 class EmotionAnalysisRead(PersistenceSchema):
     id: str
     user_id: str
-    record_date: date | None
+    record_date: date
     analyzed_at: datetime
     model_version: str
     predicted_emotion: EmotionLabel
@@ -28,4 +40,4 @@ class EmotionAnalysisRead(PersistenceSchema):
         return self
 
 
-__all__ = ["EmotionAnalysisRead"]
+__all__ = ["EmotionAnalysisCreate", "EmotionAnalysisRead"]

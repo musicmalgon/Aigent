@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Coroutine
+from datetime import date
 from typing import Any, TypeVar, cast
 
 import pytest
@@ -87,11 +88,15 @@ class FakeAIClient:
 
 def test_mapping_contains_only_persistence_fields() -> None:
     response = ai_response()
+    record_date = date(2026, 7, 20)
 
-    payload = map_ai_response_to_persistence(response)
+    payload = map_ai_response_to_persistence(
+        response,
+        record_date=record_date,
+    )
     stored = payload.model_dump(mode="json")
 
-    assert payload.record_date is None
+    assert payload.record_date == record_date
     assert payload.model_version == response.model_version
     assert payload.predicted_emotion is EmotionLabel.ANXIETY
     assert payload.confidence == response.confidence
@@ -126,6 +131,7 @@ def test_orchestration_forwards_normalized_request_and_user_id(
         hs02=" second\nprivate input ",
         hs03=" \t ",
     )
+    record_date = date(2026, 7, 20)
     fake_client = FakeAIClient(response=ai_response())
     captured: dict[str, object] = {}
     sentinel = cast(EmotionAnalysisResult, object())
@@ -153,6 +159,7 @@ def test_orchestration_forwards_normalized_request_and_user_id(
         analyze_and_stage_emotion_result(
             db_session,
             user_id="authenticated-user",
+            record_date=record_date,
             request=request,
             ai_client=cast(AIServiceClient, fake_client),
         )
@@ -166,6 +173,7 @@ def test_orchestration_forwards_normalized_request_and_user_id(
     assert captured["session"] is db_session
     assert captured["user_id"] == "authenticated-user"
     payload = cast(EmotionResultCreate, captured["payload"])
+    assert payload.record_date == record_date
     assert payload.input_hash is None
     assert "private input" not in repr(payload)
 
@@ -198,6 +206,7 @@ def test_ai_failure_does_not_call_repository(
             analyze_and_stage_emotion_result(
                 db_session,
                 user_id="authenticated-user",
+                record_date=date(2026, 7, 20),
                 request=CoarseEmotionRequest(hs01="first", hs02="second"),
                 ai_client=cast(AIServiceClient, fake_client),
             )

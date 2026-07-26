@@ -4,7 +4,7 @@ import sqlite3
 import uuid
 from collections.abc import Generator
 from datetime import date, datetime
-from typing import cast
+from typing import Any, cast
 from unittest.mock import Mock
 
 import pytest
@@ -148,6 +148,62 @@ def test_client_cannot_set_user_id_or_unknown_fields(client: TestClient) -> None
         f"{BASE_PATH}/2026-07-20",
         headers=headers,
     ).status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "request_kwargs", "expected_location"),
+    [
+        (
+            "POST",
+            BASE_PATH,
+            {"json": {"record_date": "private-invalid-date"}},
+            "body",
+        ),
+        (
+            "GET",
+            BASE_PATH,
+            {
+                "params": {
+                    "date_from": "private-invalid-date",
+                    "date_to": "2026-07-20",
+                }
+            },
+            "query",
+        ),
+        (
+            "GET",
+            f"{BASE_PATH}/private-invalid-date",
+            {},
+            "path",
+        ),
+    ],
+)
+def test_framework_validation_errors_keep_safe_contract(
+    client: TestClient,
+    method: str,
+    path: str,
+    request_kwargs: dict[str, Any],
+    expected_location: str,
+) -> None:
+    headers, _ = authenticated_user(client)
+
+    response = client.request(
+        method,
+        path,
+        headers=headers,
+        **request_kwargs,
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail
+    assert any(error["loc"][0] == expected_location for error in detail)
+    for error in detail:
+        assert set(error) == {"type", "loc", "msg"}
+        assert isinstance(error["type"], str)
+        assert isinstance(error["loc"], list)
+        assert isinstance(error["msg"], str)
+    assert "private-invalid-date" not in response.text
 
 
 def test_duplicate_user_date_returns_conflict_and_recovers(

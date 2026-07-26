@@ -8,7 +8,7 @@ from sqladmin import Admin
 from sqlalchemy.engine import Engine
 
 from app.admin import UserAdmin
-from app.api import auth, behavioral_records, emotion_analyses, users
+from app.api import auth, baselines, behavioral_records, emotion_analyses, users
 from app.clients.ai import AIServiceClient, create_ai_service_client
 from app.core.config import Settings, settings
 from app.core.database import create_database_engine
@@ -77,6 +77,7 @@ def create_app(
     application.include_router(users.router, tags=["users"])
     application.include_router(behavioral_records.router)
     application.include_router(emotion_analyses.router)
+    application.include_router(baselines.router)
 
     @application.get("/")
     def health_check() -> dict[str, str]:

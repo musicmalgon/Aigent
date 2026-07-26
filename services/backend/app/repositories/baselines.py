@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -44,7 +46,6 @@ def get_latest_ready_baseline(
             BehavioralBaseline.status == PersistenceBaselineStatus.READY,
         )
         .order_by(
-            BehavioralBaseline.window_end.desc(),
             BehavioralBaseline.created_at.desc(),
             BehavioralBaseline.id.desc(),
         )
@@ -56,17 +57,34 @@ def list_baselines(
     session: Session,
     *,
     user_id: str,
+    status: PersistenceBaselineStatus | None = None,
+    window_end_from: date | None = None,
+    window_end_to: date | None = None,
+    limit: int | None = None,
+    offset: int = 0,
 ) -> list[BehavioralBaseline]:
-    return list(
-        session.scalars(
-            select(BehavioralBaseline)
-            .where(BehavioralBaseline.user_id == user_id)
-            .order_by(
-                BehavioralBaseline.window_end.desc(),
-                BehavioralBaseline.created_at.desc(),
-            )
-        )
+    statement = select(BehavioralBaseline).where(
+        BehavioralBaseline.user_id == user_id
     )
+    if status is not None:
+        statement = statement.where(BehavioralBaseline.status == status)
+    if window_end_from is not None:
+        statement = statement.where(
+            BehavioralBaseline.window_end >= window_end_from
+        )
+    if window_end_to is not None:
+        statement = statement.where(
+            BehavioralBaseline.window_end <= window_end_to
+        )
+    statement = statement.order_by(
+        BehavioralBaseline.created_at.desc(),
+        BehavioralBaseline.id.desc(),
+    )
+    if offset:
+        statement = statement.offset(offset)
+    if limit is not None:
+        statement = statement.limit(limit)
+    return list(session.scalars(statement))
 
 
 __all__ = [

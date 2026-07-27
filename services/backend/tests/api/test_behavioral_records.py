@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from collections.abc import Generator
-from datetime import date, datetime
+from datetime import date
 from typing import Any, cast
 from unittest.mock import Mock
 
@@ -16,8 +16,14 @@ from sqlalchemy.orm import Session
 from app.api import behavioral_records as api_module
 from app.core.database import get_db
 from app.core.security import create_access_token, hash_password
+from app.models.persistence import BehavioralDailyRecord
 from app.models.user import User
 from app.repositories import behavioral_records as repository_module
+from tests.daily_record_contract import (
+    DAILY_RECORD_SCHEMA,
+    canonical_daily_record_payload,
+    validate_daily_record_response,
+)
 
 BASE_PATH = "/api/v1/behavioral-records"
 PASSWORD = "correct-horse-battery-staple"
@@ -55,14 +61,53 @@ def create_record(
     response = client.post(
         BASE_PATH,
         headers=headers,
-        json={"record_date": record_date, **fields},
+        json=canonical_daily_record_payload(
+            record_date=record_date,
+            **fields,
+        ),
     )
     assert response.status_code == 201, response.text
     return cast(dict[str, object], response.json())
 
 
+@pytest.fixture
+def legacy_metadata_client(
+    test_app: FastAPI,
+    db_session: Session,
+) -> Generator[tuple[TestClient, dict[str, str]], None, None]:
+    user = User(
+        email="legacy-daily-record@example.com",
+        hashed_password=hash_password(PASSWORD),
+    )
+    db_session.add(user)
+    db_session.flush()
+    db_session.add(
+        BehavioralDailyRecord(
+            user_id=user.id,
+            record_date=date(2026, 7, 20),
+            source_by_field=None,
+            coverage_by_field=None,
+        )
+    )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {create_access_token(subject=user.id)}"}
+
+    def override_get_db() -> Generator[Session, None, None]:
+        yield db_session
+
+    test_app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(test_app) as local_client:
+            yield local_client, headers
+    finally:
+        test_app.dependency_overrides.pop(get_db, None)
+
+
 def test_create_requires_authentication(client: TestClient) -> None:
-    response = client.post(BASE_PATH, json={"record_date": "2026-07-20"})
+    response = client.post(
+        BASE_PATH,
+        json=canonical_daily_record_payload(),
+    )
 
     assert response.status_code == 401
 
@@ -75,62 +120,52 @@ def test_create_full_record_and_serialize_response(client: TestClient) -> None:
         headers,
         "2026-07-20",
         sleep_minutes=420,
-        study_work_minutes=480,
+        bedtime="23:40:00",
+        wake_time="06:40:00",
+        steps=7420,
+        active_minutes=52,
+        work_or_study_minutes=480,
         rest_minutes=60,
         exercise_minutes=30,
         schedule_count=5,
-        subjective_stress=4.5,
         subjective_fatigue=6.0,
-        source="manual",
-        timezone="Asia/Seoul",
-        data_completeness=0.9,
+        time_zone="Asia/Seoul",
     )
 
-    uuid.UUID(cast(str, body["id"]))
-    uuid.UUID(cast(str, body["user_id"]))
     assert body["user_id"] == user["id"]
-    assert body["record_date"] == "2026-07-20"
-    assert body["study_work_minutes"] == 480
-    assert body["timezone"] == "Asia/Seoul"
-    assert body["data_completeness"] == 0.9
-    for field in ("created_at", "updated_at"):
-        serialized = cast(str, body[field]).replace("Z", "+00:00")
-        timestamp = datetime.fromisoformat(serialized)
-        assert timestamp.utcoffset() is not None
+    assert body["date"] == "2026-07-20"
+    assert body["work_or_study_minutes"] == 480
+    assert body["time_zone"] == "Asia/Seoul"
+    assert set(body) == set(DAILY_RECORD_SCHEMA["properties"])
+    validate_daily_record_response(body)
 
 
-def test_create_preserves_nulls_and_optional_defaults(client: TestClient) -> None:
+def test_create_preserves_explicit_nulls(client: TestClient) -> None:
     headers, _ = authenticated_user(client)
+    nullable_fields = (
+        "sleep_minutes",
+        "bedtime",
+        "wake_time",
+        "steps",
+        "active_minutes",
+        "exercise_minutes",
+        "work_or_study_minutes",
+        "rest_minutes",
+        "schedule_count",
+        "subjective_fatigue",
+    )
 
     explicit_nulls = create_record(
         client,
         headers,
         "2026-07-19",
-        sleep_minutes=None,
-        study_work_minutes=None,
-        rest_minutes=None,
-        exercise_minutes=None,
-        schedule_count=None,
-        subjective_stress=None,
-        subjective_fatigue=None,
-        data_completeness=None,
+        **{field: None for field in nullable_fields},
+        source_by_field={field: "not_provided" for field in nullable_fields},
+        coverage_by_field={field: "unavailable" for field in nullable_fields},
     )
-    omitted = create_record(client, headers, "2026-07-18")
 
-    nullable_fields = (
-        "sleep_minutes",
-        "study_work_minutes",
-        "rest_minutes",
-        "exercise_minutes",
-        "schedule_count",
-        "subjective_stress",
-        "subjective_fatigue",
-        "data_completeness",
-    )
     assert all(explicit_nulls[field] is None for field in nullable_fields)
-    assert all(omitted[field] is None for field in nullable_fields)
-    assert omitted["source"] == "manual"
-    assert omitted["timezone"] == "UTC"
+    validate_daily_record_response(explicit_nulls)
 
 
 def test_client_cannot_set_user_id_or_unknown_fields(client: TestClient) -> None:
@@ -140,14 +175,45 @@ def test_client_cannot_set_user_id_or_unknown_fields(client: TestClient) -> None
         response = client.post(
             BASE_PATH,
             headers=headers,
-            json={"record_date": "2026-07-20", **extra},
+            json={**canonical_daily_record_payload(), **extra},
         )
         assert response.status_code == 422
 
-    assert client.get(
-        f"{BASE_PATH}/2026-07-20",
+    assert (
+        client.get(
+            f"{BASE_PATH}/2026-07-20",
+            headers=headers,
+        ).status_code
+        == 404
+    )
+
+
+@pytest.mark.parametrize(
+    "legacy_field",
+    [
+        "record_date",
+        "timezone",
+        "study_work_minutes",
+        "source",
+        "data_completeness",
+        "subjective_stress",
+    ],
+)
+def test_legacy_persistence_fields_are_not_public_input(
+    client: TestClient,
+    legacy_field: str,
+) -> None:
+    headers, _ = authenticated_user(client)
+    response = client.post(
+        BASE_PATH,
         headers=headers,
-    ).status_code == 404
+        json={
+            **canonical_daily_record_payload(),
+            legacy_field: "legacy-value",
+        },
+    )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.parametrize(
@@ -156,7 +222,11 @@ def test_client_cannot_set_user_id_or_unknown_fields(client: TestClient) -> None
         (
             "POST",
             BASE_PATH,
-            {"json": {"record_date": "private-invalid-date"}},
+            {
+                "json": canonical_daily_record_payload(
+                    record_date="private-invalid-date"
+                )
+            },
             "body",
         ),
         (
@@ -215,7 +285,7 @@ def test_duplicate_user_date_returns_conflict_and_recovers(
     duplicate = client.post(
         BASE_PATH,
         headers=headers,
-        json={"record_date": "2026-07-20"},
+        json=canonical_daily_record_payload(),
     )
 
     assert duplicate.status_code == 409
@@ -239,7 +309,7 @@ def test_different_users_can_create_the_same_date(client: TestClient) -> None:
 
     assert first["user_id"] == first_user["id"]
     assert second["user_id"] == second_user["id"]
-    assert first["id"] != second["id"]
+    assert first["user_id"] != second["user_id"]
 
 
 def test_read_record_by_date(client: TestClient) -> None:
@@ -255,19 +325,56 @@ def test_read_record_by_date(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == created
+    validate_daily_record_response(response.json())
 
 
 def test_read_missing_and_invalid_dates(client: TestClient) -> None:
     headers, _ = authenticated_user(client)
 
-    assert client.get(
-        f"{BASE_PATH}/2026-07-20",
+    assert (
+        client.get(
+            f"{BASE_PATH}/2026-07-20",
+            headers=headers,
+        ).status_code
+        == 404
+    )
+    assert (
+        client.get(
+            f"{BASE_PATH}/not-a-date",
+            headers=headers,
+        ).status_code
+        == 422
+    )
+
+
+def test_read_legacy_record_without_field_metadata_returns_service_unavailable(
+    legacy_metadata_client: tuple[TestClient, dict[str, str]],
+) -> None:
+    client, headers = legacy_metadata_client
+
+    response = client.get(f"{BASE_PATH}/2026-07-20", headers=headers)
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Behavioral record field metadata is unavailable."
+    }
+
+
+def test_list_with_legacy_record_without_field_metadata_returns_service_unavailable(
+    legacy_metadata_client: tuple[TestClient, dict[str, str]],
+) -> None:
+    client, headers = legacy_metadata_client
+
+    response = client.get(
+        BASE_PATH,
         headers=headers,
-    ).status_code == 404
-    assert client.get(
-        f"{BASE_PATH}/not-a-date",
-        headers=headers,
-    ).status_code == 422
+        params={"date_from": "2026-07-20", "date_to": "2026-07-20"},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "Behavioral record field metadata is unavailable."
+    }
 
 
 def test_records_are_isolated_between_users(client: TestClient) -> None:
@@ -275,10 +382,13 @@ def test_records_are_isolated_between_users(client: TestClient) -> None:
     other_headers, _ = authenticated_user(client, email="other@example.com")
     create_record(client, owner_headers, "2026-07-20")
 
-    assert client.get(
-        f"{BASE_PATH}/2026-07-20",
-        headers=other_headers,
-    ).status_code == 404
+    assert (
+        client.get(
+            f"{BASE_PATH}/2026-07-20",
+            headers=other_headers,
+        ).status_code
+        == 404
+    )
     response = client.get(
         BASE_PATH,
         headers=other_headers,
@@ -306,11 +416,14 @@ def test_range_is_inclusive_and_uses_repository_order(client: TestClient) -> Non
     )
 
     assert response.status_code == 200
-    assert [item["record_date"] for item in response.json()] == [
+    items = response.json()
+    assert [item["date"] for item in items] == [
         "2026-07-03",
         "2026-07-02",
         "2026-07-01",
     ]
+    for item in items:
+        validate_daily_record_response(item)
 
 
 def test_default_range_contains_latest_14_utc_days(
@@ -325,7 +438,7 @@ def test_default_range_contains_latest_14_utc_days(
     response = client.get(BASE_PATH, headers=headers)
 
     assert response.status_code == 200
-    assert [item["record_date"] for item in response.json()] == [
+    assert [item["date"] for item in response.json()] == [
         "2026-07-20",
         "2026-07-07",
     ]
@@ -376,18 +489,85 @@ def test_numeric_boundaries_are_accepted(client: TestClient) -> None:
         headers,
         "2026-07-20",
         sleep_minutes=0,
-        study_work_minutes=1440,
+        steps=0,
+        active_minutes=1440,
+        work_or_study_minutes=1440,
         rest_minutes=0,
         exercise_minutes=1440,
         schedule_count=0,
-        subjective_stress=0,
-        subjective_fatigue=10,
-        data_completeness=1,
+        subjective_fatigue=10.1,
     )
 
     assert body["sleep_minutes"] == 0
-    assert body["study_work_minutes"] == 1440
-    assert body["subjective_fatigue"] == 10
+    assert body["steps"] == 0
+    assert body["active_minutes"] == 1440
+    assert body["work_or_study_minutes"] == 1440
+    assert body["subjective_fatigue"] == 10.1
+    validate_daily_record_response(body)
+
+
+@pytest.mark.parametrize(
+    "arbitrary_precision_value",
+    [
+        0,
+        2_147_483_647,
+        2_147_483_648,
+        9_223_372_036_854_775_807,
+        9_223_372_036_854_775_808,
+        2**100 + 12345,
+    ],
+)
+def test_arbitrary_precision_integers_round_trip(
+    client: TestClient,
+    arbitrary_precision_value: int,
+) -> None:
+    headers, _ = authenticated_user(client)
+
+    created = create_record(
+        client,
+        headers,
+        "2026-07-20",
+        steps=arbitrary_precision_value,
+        schedule_count=arbitrary_precision_value,
+    )
+    fetched = client.get(
+        f"{BASE_PATH}/2026-07-20",
+        headers=headers,
+    )
+
+    assert created["steps"] == arbitrary_precision_value
+    assert created["schedule_count"] == arbitrary_precision_value
+    assert fetched.status_code == 200
+    assert fetched.json()["steps"] == arbitrary_precision_value
+    assert fetched.json()["schedule_count"] == arbitrary_precision_value
+    validate_daily_record_response(fetched.json())
+
+
+@pytest.mark.parametrize(
+    ("value", "metadata_field", "metadata_value"),
+    [
+        (None, "coverage_by_field", "complete"),
+        (420, "coverage_by_field", "unavailable"),
+        (420, "source_by_field", "not_provided"),
+    ],
+)
+def test_post_rejects_cross_field_metadata_mismatches(
+    client: TestClient,
+    value: int | None,
+    metadata_field: str,
+    metadata_value: str,
+) -> None:
+    headers, _ = authenticated_user(client)
+    payload = canonical_daily_record_payload(sleep_minutes=value)
+    payload[metadata_field]["sleep_minutes"] = metadata_value
+
+    response = client.post(BASE_PATH, headers=headers, json=payload)
+
+    assert response.status_code == 422
+    assert (
+        client.get(f"{BASE_PATH}/2026-07-20", headers=headers).status_code
+        == 404
+    )
 
 
 @pytest.mark.parametrize(
@@ -395,15 +575,16 @@ def test_numeric_boundaries_are_accepted(client: TestClient) -> None:
     [
         ("sleep_minutes", -1),
         ("sleep_minutes", 1441),
-        ("study_work_minutes", 1441),
+        ("steps", -1),
+        ("steps", 1.5),
+        ("active_minutes", 1441),
+        ("work_or_study_minutes", 1441),
         ("rest_minutes", -1),
         ("exercise_minutes", 1441),
         ("schedule_count", -1),
-        ("subjective_stress", 10.1),
+        ("schedule_count", 1.5),
         ("subjective_fatigue", -0.1),
-        ("data_completeness", 1.1),
-        ("timezone", "not/a/real-zone"),
-        ("source", "untrusted"),
+        ("time_zone", "not/a/real-zone"),
     ],
 )
 def test_invalid_payload_is_rejected_without_write(
@@ -416,14 +597,20 @@ def test_invalid_payload_is_rejected_without_write(
     response = client.post(
         BASE_PATH,
         headers=headers,
-        json={"record_date": "2026-07-20", field: value},
+        json={
+            **canonical_daily_record_payload(),
+            field: value,
+        },
     )
 
     assert response.status_code == 422
-    assert client.get(
-        f"{BASE_PATH}/2026-07-20",
-        headers=headers,
-    ).status_code == 404
+    assert (
+        client.get(
+            f"{BASE_PATH}/2026-07-20",
+            headers=headers,
+        ).status_code
+        == 404
+    )
 
 
 def test_future_date_uses_submitted_timezone(
@@ -442,12 +629,18 @@ def test_future_date_uses_submitted_timezone(
     accepted = client.post(
         BASE_PATH,
         headers=headers,
-        json={"record_date": "2026-07-20", "timezone": "Asia/Seoul"},
+        json=canonical_daily_record_payload(
+            record_date="2026-07-20",
+            time_zone="Asia/Seoul",
+        ),
     )
     rejected = client.post(
         BASE_PATH,
         headers=headers,
-        json={"record_date": "2026-07-21", "timezone": "America/New_York"},
+        json=canonical_daily_record_payload(
+            record_date="2026-07-21",
+            time_zone="America/New_York",
+        ),
     )
 
     assert accepted.status_code == 201
@@ -470,7 +663,7 @@ def test_database_unique_race_is_returned_as_conflict(
     response = client.post(
         BASE_PATH,
         headers=headers,
-        json={"record_date": "2026-07-20"},
+        json=canonical_daily_record_payload(),
     )
 
     assert response.status_code == 409
@@ -497,9 +690,7 @@ def test_duplicate_rolls_back_shared_session(
     )
     db_session.add(user)
     db_session.commit()
-    headers = {
-        "Authorization": f"Bearer {create_access_token(subject=user.id)}"
-    }
+    headers = {"Authorization": f"Bearer {create_access_token(subject=user.id)}"}
 
     def override_get_db() -> Generator[Session, None, None]:
         yield db_session
@@ -513,12 +704,12 @@ def test_duplicate_rolls_back_shared_session(
         duplicate = local_client.post(
             BASE_PATH,
             headers=headers,
-            json={"record_date": "2026-07-20"},
+            json=canonical_daily_record_payload(),
         )
         recovered = local_client.post(
             BASE_PATH,
             headers=headers,
-            json={"record_date": "2026-07-19"},
+            json=canonical_daily_record_payload(record_date="2026-07-19"),
         )
 
     assert duplicate.status_code == 409
@@ -547,7 +738,7 @@ def test_commit_failure_rolls_back_without_partial_write(
         response = failing_client.post(
             BASE_PATH,
             headers=headers,
-            json={"record_date": "2026-07-20"},
+            json=canonical_daily_record_payload(),
         )
     monkeypatch.setattr(Session, "commit", original_commit)
 
@@ -574,7 +765,14 @@ def test_openapi_declares_authenticated_daily_record_contract(
     assert collection["post"]["security"]
     assert collection["get"]["security"]
     request_schema = schema["components"]["schemas"]["DailyRecordCreate"]
-    assert "user_id" not in request_schema["properties"]
+    shared_properties = set(DAILY_RECORD_SCHEMA["properties"])
+    assert set(request_schema["properties"]) == shared_properties - {"user_id"}
+    assert set(request_schema["required"]) == shared_properties - {"user_id"}
+    for component_name in ("DailyRecordCreate", "DailyRecordRead"):
+        assert (
+            schema["components"]["schemas"][component_name]["allOf"]
+            == DAILY_RECORD_SCHEMA["allOf"]
+        )
     response_schema = collection["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"]

@@ -7,14 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.models.persistence import BehavioralDailyRecord
 from app.repositories import PersistenceConflictError
-from app.schemas.persistence import DailyRecordCreate
+from app.schemas.persistence import DailyRecordPersistenceCreate
 
 
 def create_daily_record(
     session: Session,
     *,
     user_id: str,
-    payload: DailyRecordCreate,
+    payload: DailyRecordPersistenceCreate,
 ) -> BehavioralDailyRecord:
     if get_daily_record_by_date(
         session,

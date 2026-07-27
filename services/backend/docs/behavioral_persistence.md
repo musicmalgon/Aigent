@@ -21,8 +21,15 @@ erDiagram
 ```
 
 - `behavioral_daily_records` stores at most one row per user and local date.
-  Minute fields are nullable and constrained to `0..1440`; subjective values
-  are `0..10`. `timezone` preserves the date boundary used by the producer.
+  Minute fields are nullable and constrained to `0..1440`; steps and schedule
+  counts are non-negative. Because the shared JSON Schema does not define a
+  maximum for those integers, `steps` and `schedule_count` use an exact
+  text-backed integer type rather than a 64-bit database integer; the ORM
+  still exposes Python integers. Daily `subjective_fatigue` is non-negative
+  without an assumed scale maximum, while the legacy internal
+  `subjective_stress` remains `0..10`. `timezone` preserves the date boundary
+  used by the producer. Whole-second local `bedtime` and `wake_time` values
+  are stored without UTC offsets.
 - `emotion_analysis_results` stores the complete six-label probability
   distribution, confidence, uncertainty, model version, and an optional
   irreversible input hash. It never stores the input text.
@@ -42,6 +49,12 @@ These ORM rows are not replacements for the existing behavioral or baseline
 wire contracts. DB-only identity, provenance, and timestamp fields remain
 internal, while explicit adapters handle naming differences such as
 `study_work_minutes` versus `work_or_study_minutes`.
+
+Daily records also store the shared `source_by_field` and `coverage_by_field`
+objects as portable JSON. The API validates their closed key sets, enums, and
+value/coverage invariants before persistence. The older scalar `source` and
+`data_completeness` columns remain internal for compatibility and are not
+substitutes for field-level metadata.
 
 ## Privacy and retention
 
@@ -109,7 +122,21 @@ python -m alembic upgrade head
 ```
 
 Revision `20260725_0002` must follow an accurately stamped or migrated
-`20260725_0001`. Do not run it against an unknown `create_all()` database.
+`20260725_0001`; revision `20260727_0003` then adds the shared Daily Record
+storage fields and constraints. Do not run these against an unknown
+`create_all()` database.
+
+Revision `0003` leaves the two field-level metadata columns nullable at the
+database layer so existing rows are not assigned invented provenance. New API
+writes always supply both complete objects. A deployment with pre-existing
+daily records must apply an explicitly approved provenance/coverage backfill
+before those rows can be serialized through the shared response contract.
+Until that backfill is complete, an attempted shared-contract read returns
+`503` rather than inventing metadata or leaking an internal validation error.
+Downgrading `0003` is rejected before any schema change when a row contains
+data in a `0003`-only column, `subjective_fatigue > 10`, or a
+`schedule_count` outside the signed 32-bit range that revision `0002` can
+represent. Those values must be resolved or exported explicitly.
 Review PostgreSQL's existing `usertype` enum separately; this revision does
 not modify it.
 

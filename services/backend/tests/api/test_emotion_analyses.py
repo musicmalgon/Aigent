@@ -28,6 +28,7 @@ from app.main import create_app
 from app.models.persistence import EmotionAnalysisResult
 from app.repositories import emotion_results
 from app.services.baselines import calculate_and_store_baseline
+from tests.daily_record_contract import canonical_daily_record_payload
 
 BASE_PATH = "/api/v1/emotion-analyses"
 DAILY_RECORD_PATH = "/api/v1/behavioral-records"
@@ -61,8 +62,7 @@ def valid_ai_payload(
         "is_uncertain": False,
         "uncertainty_reason": None,
         "probabilities": {
-            label.value: probability
-            for label, probability in probabilities.items()
+            label.value: probability for label, probability in probabilities.items()
         },
         "top_predictions": [
             {
@@ -144,9 +144,9 @@ def authenticated_headers(
 
 def emotion_result_count(engine: Engine) -> int:
     with Session(engine) as session:
-        return session.scalar(
-            select(func.count()).select_from(EmotionAnalysisResult)
-        ) or 0
+        return (
+            session.scalar(select(func.count()).select_from(EmotionAnalysisResult)) or 0
+        )
 
 
 def create_daily_record(
@@ -158,7 +158,7 @@ def create_daily_record(
     response = client.post(
         DAILY_RECORD_PATH,
         headers=headers,
-        json={"record_date": record_date},
+        json=canonical_daily_record_payload(record_date=record_date),
     )
     assert response.status_code == 201, response.text
 
@@ -262,11 +262,14 @@ def test_success_normalizes_request_and_returns_only_stored_result(
         assert stored.record_date == date.fromisoformat(RECORD_DATE)
         assert stored.input_hash is None
         assert stored.probabilities == valid_ai_payload()["probabilities"]
-        assert session.scalar(
-            select(func.count())
-            .select_from(EmotionAnalysisResult)
-            .where(EmotionAnalysisResult.record_date.is_(None))
-        ) == 0
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(EmotionAnalysisResult)
+                .where(EmotionAnalysisResult.record_date.is_(None))
+            )
+            == 0
+        )
 
 
 def test_missing_daily_record_returns_not_found_before_ai_call(
@@ -365,9 +368,7 @@ def test_future_record_date_is_rejected_before_lookup_and_ai_call(
         )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": "record_date cannot be in the future."
-    }
+    assert response.json() == {"detail": "record_date cannot be in the future."}
     assert calls == 0
     assert emotion_result_count(migrated_engine) == 0
 
@@ -684,16 +685,14 @@ def test_openapi_declares_minimal_authenticated_contract(
 ) -> None:
     schema = client.get("/openapi.json").json()
     operation = schema["paths"][BASE_PATH]["post"]
-    request_ref = operation["requestBody"]["content"]["application/json"][
+    request_ref = operation["requestBody"]["content"]["application/json"]["schema"][
+        "$ref"
+    ]
+    response_ref = operation["responses"]["201"]["content"]["application/json"][
         "schema"
     ]["$ref"]
-    response_ref = operation["responses"]["201"]["content"][
-        "application/json"
-    ]["schema"]["$ref"]
     request_schema = schema["components"]["schemas"][request_ref.rsplit("/", 1)[1]]
-    response_schema = schema["components"]["schemas"][
-        response_ref.rsplit("/", 1)[1]
-    ]
+    response_schema = schema["components"]["schemas"][response_ref.rsplit("/", 1)[1]]
 
     assert operation["security"]
     assert set(request_schema["required"]) == {"record_date", "hs01", "hs02"}

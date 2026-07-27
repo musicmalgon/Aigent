@@ -18,12 +18,7 @@ from app.repositories import PersistenceScopeError
 def _require_user_scope(
     *,
     user_id: str,
-    entity: (
-        BehavioralDailyRecord
-        | EmotionAnalysisResult
-        | BehavioralBaseline
-        | None
-    ),
+    entity: (BehavioralDailyRecord | EmotionAnalysisResult | BehavioralBaseline | None),
     entity_name: str,
 ) -> None:
     if entity is not None and entity.user_id != user_id:
@@ -61,9 +56,8 @@ def create_risk_evaluation(
     payload = result.model_dump(mode="json")
     evaluation = BurnoutRiskEvaluation(
         user_id=user_id,
-        record_date=record_date or (
-            daily_record.record_date if daily_record is not None else None
-        ),
+        record_date=record_date
+        or (daily_record.record_date if daily_record is not None else None),
         evaluated_at=evaluated_at or datetime.now(UTC),
         daily_record_id=daily_record.id if daily_record is not None else None,
         emotion_analysis_result_id=(
@@ -116,6 +110,27 @@ def get_latest_risk_evaluation(
     )
 
 
+def get_latest_dated_risk_evaluation(
+    session: Session,
+    *,
+    user_id: str,
+) -> BurnoutRiskEvaluation | None:
+    return session.scalar(
+        select(BurnoutRiskEvaluation)
+        .where(
+            BurnoutRiskEvaluation.user_id == user_id,
+            BurnoutRiskEvaluation.record_date.is_not(None),
+            BurnoutRiskEvaluation.daily_record_id.is_not(None),
+        )
+        .order_by(
+            BurnoutRiskEvaluation.evaluated_at.desc(),
+            BurnoutRiskEvaluation.created_at.desc(),
+            BurnoutRiskEvaluation.id.desc(),
+        )
+        .limit(1)
+    )
+
+
 def list_risk_evaluations(
     session: Session,
     *,
@@ -128,14 +143,47 @@ def list_risk_evaluations(
             .order_by(
                 BurnoutRiskEvaluation.evaluated_at.desc(),
                 BurnoutRiskEvaluation.created_at.desc(),
+                BurnoutRiskEvaluation.id.desc(),
             )
         )
     )
 
 
+def list_dated_risk_evaluations(
+    session: Session,
+    *,
+    user_id: str,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[BurnoutRiskEvaluation]:
+    statement = select(BurnoutRiskEvaluation).where(
+        BurnoutRiskEvaluation.user_id == user_id,
+        BurnoutRiskEvaluation.record_date.is_not(None),
+        BurnoutRiskEvaluation.daily_record_id.is_not(None),
+    )
+    if date_from is not None:
+        statement = statement.where(BurnoutRiskEvaluation.record_date >= date_from)
+    if date_to is not None:
+        statement = statement.where(BurnoutRiskEvaluation.record_date <= date_to)
+    statement = (
+        statement.order_by(
+            BurnoutRiskEvaluation.evaluated_at.desc(),
+            BurnoutRiskEvaluation.created_at.desc(),
+            BurnoutRiskEvaluation.id.desc(),
+        )
+        .offset(offset)
+        .limit(limit)
+    )
+    return list(session.scalars(statement))
+
+
 __all__ = [
     "create_risk_evaluation",
+    "get_latest_dated_risk_evaluation",
     "get_latest_risk_evaluation",
     "get_risk_evaluation",
+    "list_dated_risk_evaluations",
     "list_risk_evaluations",
 ]

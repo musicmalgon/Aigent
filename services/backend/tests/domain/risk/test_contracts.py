@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import ast
 import json
+import math
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+import pytest
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 from jsonschema.validators import validator_for  # type: ignore[import-untyped]
 
@@ -24,7 +26,7 @@ RESPONSE_PATH = SCHEMA_DIR / "burnout_risk_evaluation_response.schema.json"
 
 
 def load_schema(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
 
 def test_all_contract_schemas_and_examples_remain_valid() -> None:
@@ -71,6 +73,47 @@ def test_request_without_optional_emotion_metadata_matches_contract() -> None:
     Draft202012Validator(schema).validate(
         request.model_dump(mode="json", by_alias=True)
     )
+
+
+def test_fatigue_above_ten_matches_request_contract_and_pydantic() -> None:
+    schema = load_schema(REQUEST_PATH)
+    payload = {
+        "current": {"subjective_stress": 10, "subjective_fatigue": 12.5},
+        "baseline": {
+            "subjective_stress": 10,
+            "subjective_fatigue": 11.25,
+            "sample_days": 14,
+        },
+    }
+
+    Draft202012Validator(schema).validate(payload)
+    request = BurnoutRiskEvaluationRequest.model_validate(payload)
+
+    assert request.current.subjective_fatigue == 12.5
+    assert request.baseline is not None
+    assert request.baseline.subjective_fatigue == 11.25
+
+
+def test_negative_fatigue_is_rejected_by_contract_and_pydantic() -> None:
+    schema = load_schema(REQUEST_PATH)
+    payload = {
+        "current": {"subjective_fatigue": -0.1},
+        "baseline": {"subjective_fatigue": -0.1, "sample_days": 14},
+    }
+
+    errors = list(Draft202012Validator(schema).iter_errors(payload))
+
+    assert len(errors) == 2
+    with pytest.raises(ValueError):
+        BurnoutRiskEvaluationRequest.model_validate(payload)
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+def test_non_finite_fatigue_is_rejected_by_pydantic(value: float) -> None:
+    with pytest.raises(ValueError):
+        CurrentRiskSignals(subjective_fatigue=value)
+    with pytest.raises(ValueError):
+        PersonalBaseline(subjective_fatigue=value, sample_days=14)
 
 
 def test_response_contract_example_matches_pydantic() -> None:

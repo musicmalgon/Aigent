@@ -38,13 +38,15 @@ def get_daily_record(
     *,
     user_id: str,
     record_id: str,
+    for_update: bool = False,
 ) -> BehavioralDailyRecord | None:
-    return session.scalar(
-        select(BehavioralDailyRecord).where(
-            BehavioralDailyRecord.id == record_id,
-            BehavioralDailyRecord.user_id == user_id,
-        )
+    statement = select(BehavioralDailyRecord).where(
+        BehavioralDailyRecord.id == record_id,
+        BehavioralDailyRecord.user_id == user_id,
     )
+    if for_update:
+        statement = statement.with_for_update()
+    return session.scalar(statement)
 
 
 def get_daily_record_by_date(

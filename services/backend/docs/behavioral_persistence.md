@@ -154,7 +154,6 @@ They never connect to a developer, shared, or production database.
 
 ## Follow-up integration
 
-Future changes can add the AI HTTP client, daily-record API, emotion
-orchestration, risk-evaluation API, 7/14-day result queries, explicit user
-deletion workflow, and consented calibration pipeline. These are intentionally
-outside this persistence change.
+The daily-record, emotion-orchestration, baseline, and risk-evaluation APIs are
+now layered on this persistence model. Explicit user-deletion workflows and a
+consented calibration pipeline remain outside this persistence change.

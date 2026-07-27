@@ -468,6 +468,25 @@ def test_extreme_values_are_clamped_to_contract_ranges() -> None:
     assert all(0 <= item.contribution <= 100 for item in result.factors)
 
 
+def test_fatigue_above_ten_uses_existing_deterministic_severity_cap() -> None:
+    current = CurrentRiskSignals(subjective_fatigue=25)
+    baseline = PersonalBaseline(subjective_fatigue=12, sample_days=14)
+
+    first = evaluate(current, baseline)
+    second = evaluate(current, baseline)
+    fatigue_factor = next(
+        item
+        for item in first.factors
+        if item.code is FactorCode.SUBJECTIVE_FATIGUE
+    )
+
+    assert first == second
+    assert fatigue_factor.observed_value == 25
+    assert fatigue_factor.baseline_value == 12
+    assert fatigue_factor.severity == DEFAULT_CONFIG.subjective_severity_cap
+    assert first.category_scores[RiskCategory.SUBJECTIVE] == 45
+
+
 @pytest.mark.parametrize(
     ("score", "level"),
     [

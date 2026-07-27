@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -17,7 +17,9 @@ from app.models.persistence import (
 from app.models.user import User
 from app.repositories import PersistenceScopeError
 from app.repositories.risk_evaluations import (
+    get_latest_dated_risk_evaluation,
     get_latest_risk_evaluation,
+    list_dated_risk_evaluations,
     list_risk_evaluations,
 )
 from app.services.risk_adapter import build_risk_request
@@ -188,6 +190,104 @@ def test_evaluate_store_is_append_only_and_preserves_provenance(
     assert len(list_risk_evaluations(db_session, user_id=user.id)) == 2
 
 
+def test_dated_latest_and_history_are_scoped_filtered_and_deterministic(
+    db_session: Session,
+    user: User,
+    other_user: User,
+) -> None:
+    earlier_date = date(2026, 7, 19)
+    target_date = date(2026, 7, 20)
+    earlier_daily = daily_record(
+        db_session,
+        user_id=user.id,
+        record_date=earlier_date,
+    )
+    target_daily = daily_record(
+        db_session,
+        user_id=user.id,
+        record_date=target_date,
+    )
+    other_daily = daily_record(
+        db_session,
+        user_id=other_user.id,
+        record_date=target_date,
+    )
+
+    earlier, _ = evaluate_and_store(
+        db_session,
+        user_id=user.id,
+        daily_record=earlier_daily,
+        emotion_result=None,
+        baseline=None,
+    )
+    first, _ = evaluate_and_store(
+        db_session,
+        user_id=user.id,
+        daily_record=target_daily,
+        emotion_result=None,
+        baseline=None,
+    )
+    second, _ = evaluate_and_store(
+        db_session,
+        user_id=user.id,
+        daily_record=target_daily,
+        emotion_result=None,
+        baseline=None,
+    )
+    undated, _ = evaluate_and_store(
+        db_session,
+        user_id=user.id,
+        daily_record=earlier_daily,
+        emotion_result=None,
+        baseline=None,
+    )
+    other, _ = evaluate_and_store(
+        db_session,
+        user_id=other_user.id,
+        daily_record=other_daily,
+        emotion_result=None,
+        baseline=None,
+    )
+
+    tie_time = datetime(2026, 7, 20, 12, tzinfo=UTC)
+    earlier.evaluated_at = tie_time - timedelta(hours=1)
+    earlier.created_at = tie_time - timedelta(hours=1)
+    for evaluation in (first, second):
+        evaluation.evaluated_at = tie_time
+        evaluation.created_at = tie_time
+    undated.record_date = None
+    undated.evaluated_at = tie_time + timedelta(hours=1)
+    undated.created_at = tie_time + timedelta(hours=1)
+    other.evaluated_at = tie_time + timedelta(hours=2)
+    other.created_at = tie_time + timedelta(hours=2)
+    db_session.flush()
+
+    expected = max((first, second), key=lambda evaluation: evaluation.id)
+    other_tied = min((first, second), key=lambda evaluation: evaluation.id)
+    assert get_latest_dated_risk_evaluation(db_session, user_id=user.id) is expected
+    assert list_dated_risk_evaluations(
+        db_session,
+        user_id=user.id,
+        date_from=target_date,
+        date_to=target_date,
+    ) == [expected, other_tied]
+    assert list_dated_risk_evaluations(
+        db_session,
+        user_id=user.id,
+        date_from=earlier_date,
+        date_to=target_date,
+        limit=1,
+        offset=1,
+    ) == [other_tied]
+    assert list_dated_risk_evaluations(
+        db_session,
+        user_id=user.id,
+        date_to=earlier_date,
+    ) == [earlier]
+    assert undated.record_date is None
+    assert other.user_id != user.id
+
+
 def test_cross_user_provenance_is_rejected(
     db_session: Session,
     user: User,
@@ -233,6 +333,20 @@ def test_deleting_input_sets_provenance_null_but_keeps_evaluation(
     preserved = db_session.get(BurnoutRiskEvaluation, evaluation_id)
     assert preserved is not None
     assert preserved.daily_record_id is None
+    assert (
+        get_latest_dated_risk_evaluation(
+            db_session,
+            user_id=user.id,
+        )
+        is None
+    )
+    assert (
+        list_dated_risk_evaluations(
+            db_session,
+            user_id=user.id,
+        )
+        == []
+    )
 
 
 def test_deleting_user_cascades_all_owned_rows(

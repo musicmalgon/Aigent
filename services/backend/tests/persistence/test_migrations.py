@@ -79,6 +79,15 @@ def test_persistence_migration_schema(database_url: str) -> None:
         fatigue_check = daily_checks["ck_daily_subjective_fatigue"]
         assert "subjective_fatigue >= 0" in fatigue_check
         assert "subjective_fatigue <= 10" not in fatigue_check
+        baseline_checks = {
+            item["name"]: " ".join(item["sqltext"].split())
+            for item in inspector.get_check_constraints("behavioral_baselines")
+        }
+        baseline_fatigue_check = baseline_checks[
+            "ck_baseline_subjective_fatigue"
+        ]
+        assert "subjective_fatigue >= 0" in baseline_fatigue_check
+        assert "subjective_fatigue <= 10" not in baseline_fatigue_check
         emotion_columns = {
             item["name"] for item in inspector.get_columns("emotion_analysis_results")
         }
@@ -120,7 +129,9 @@ def test_persistence_migration_schema(database_url: str) -> None:
         }
         assert {
             "ix_emotion_results_user_analyzed_at",
+            "ix_emotion_results_user_record_date_analyzed_at",
             "ix_behavioral_baselines_user_window_end",
+            "ix_behavioral_baselines_user_status_window_end",
             "ix_risk_evaluations_user_evaluated_at",
             "ix_risk_evaluations_user_record_date",
         } <= index_names
@@ -351,6 +362,207 @@ def test_downgrade_previous_revision_and_reupgrade(
         engine.dispose()
 
 
+def test_baseline_fatigue_above_ten_is_preserved_at_head(
+    database_url: str,
+) -> None:
+    config = make_alembic_config(database_url)
+    command.upgrade(config, "head")
+    engine = create_database_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, hashed_password) "
+                    "VALUES (:id, :email, :hashed_password)"
+                ),
+                {
+                    "id": "baseline-fatigue-user",
+                    "email": "baseline-fatigue@example.com",
+                    "hashed_password": "baseline-fatigue-password-hash",
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO behavioral_baselines "
+                    "(id, user_id, window_start, window_end, sample_days, "
+                    "subjective_fatigue, status, algorithm_version) "
+                    "VALUES (:id, :user_id, :window_start, :window_end, "
+                    ":sample_days, :subjective_fatigue, :status, "
+                    ":algorithm_version)"
+                ),
+                {
+                    "id": "baseline-fatigue",
+                    "user_id": "baseline-fatigue-user",
+                    "window_start": "2026-07-01",
+                    "window_end": "2026-07-14",
+                    "sample_days": 14,
+                    "subjective_fatigue": 12.5,
+                    "status": "ready",
+                    "algorithm_version": "behavioral-baseline-mean-v1",
+                },
+            )
+
+        with engine.connect() as connection:
+            value = connection.scalar(
+                text(
+                    "SELECT subjective_fatigue "
+                    "FROM behavioral_baselines "
+                    "WHERE id = :id"
+                ),
+                {"id": "baseline-fatigue"},
+            )
+
+        assert value == 12.5
+    finally:
+        engine.dispose()
+
+
+def test_0004_downgrade_preflight_rejects_baseline_fatigue_above_ten(
+    database_url: str,
+) -> None:
+    config = make_alembic_config(database_url)
+    command.upgrade(config, "head")
+    engine = create_database_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, hashed_password) "
+                    "VALUES (:id, :email, :hashed_password)"
+                ),
+                {
+                    "id": "downgrade-baseline-user",
+                    "email": "downgrade-baseline@example.com",
+                    "hashed_password": "downgrade-baseline-password-hash",
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO behavioral_baselines "
+                    "(id, user_id, window_start, window_end, sample_days, "
+                    "subjective_fatigue, status, algorithm_version) "
+                    "VALUES (:id, :user_id, :window_start, :window_end, "
+                    ":sample_days, :subjective_fatigue, :status, "
+                    ":algorithm_version)"
+                ),
+                {
+                    "id": "downgrade-baseline",
+                    "user_id": "downgrade-baseline-user",
+                    "window_start": "2026-07-01",
+                    "window_end": "2026-07-14",
+                    "sample_days": 14,
+                    "subjective_fatigue": 12.5,
+                    "status": "ready",
+                    "algorithm_version": "behavioral-baseline-mean-v1",
+                },
+            )
+    finally:
+        engine.dispose()
+
+    with pytest.raises(RuntimeError, match="behavioral_baselines"):
+        command.downgrade(config, "20260727_0003")
+
+    engine = create_database_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "20260727_0004"
+            )
+            assert connection.scalar(
+                text(
+                    "SELECT subjective_fatigue "
+                    "FROM behavioral_baselines "
+                    "WHERE id = :id"
+                ),
+                {"id": "downgrade-baseline"},
+            ) == 12.5
+    finally:
+        engine.dispose()
+
+
+def test_0004_downgrade_preserves_compatible_baseline_fatigue(
+    database_url: str,
+) -> None:
+    config = make_alembic_config(database_url)
+    command.upgrade(config, "head")
+    engine = create_database_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, hashed_password) "
+                    "VALUES (:id, :email, :hashed_password)"
+                ),
+                {
+                    "id": "compatible-downgrade-user",
+                    "email": "compatible-downgrade@example.com",
+                    "hashed_password": "compatible-downgrade-password-hash",
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO behavioral_baselines "
+                    "(id, user_id, window_start, window_end, sample_days, "
+                    "subjective_fatigue, status, algorithm_version) "
+                    "VALUES (:id, :user_id, :window_start, :window_end, "
+                    ":sample_days, :subjective_fatigue, :status, "
+                    ":algorithm_version)"
+                ),
+                {
+                    "id": "compatible-downgrade-baseline",
+                    "user_id": "compatible-downgrade-user",
+                    "window_start": "2026-07-01",
+                    "window_end": "2026-07-14",
+                    "sample_days": 14,
+                    "subjective_fatigue": 10,
+                    "status": "ready",
+                    "algorithm_version": "behavioral-baseline-mean-v1",
+                },
+            )
+    finally:
+        engine.dispose()
+
+    command.downgrade(config, "20260727_0003")
+
+    engine = create_database_engine(database_url)
+    try:
+        inspector = inspect(engine)
+        index_names = {
+            item["name"]
+            for item in inspector.get_indexes("behavioral_baselines")
+        }
+        fatigue_check = next(
+            item["sqltext"]
+            for item in inspector.get_check_constraints(
+                "behavioral_baselines"
+            )
+            if item["name"] == "ck_baseline_subjective_fatigue"
+        )
+        with engine.connect() as connection:
+            revision = connection.scalar(
+                text("SELECT version_num FROM alembic_version")
+            )
+            fatigue = connection.scalar(
+                text(
+                    "SELECT subjective_fatigue "
+                    "FROM behavioral_baselines "
+                    "WHERE id = :id"
+                ),
+                {"id": "compatible-downgrade-baseline"},
+            )
+
+        assert revision == "20260727_0003"
+        assert fatigue == 10
+        assert (
+            "ix_behavioral_baselines_user_status_window_end"
+            not in index_names
+        )
+        assert "subjective_fatigue <= 10" in " ".join(fatigue_check.split())
+    finally:
+        engine.dispose()
+
+
 def test_model_metadata_has_persistence_tables() -> None:
     assert EXPECTED_TABLES - {"alembic_version"} <= set(Base.metadata.tables)
 
@@ -380,10 +592,35 @@ def test_postgresql_offline_sql_can_be_rendered() -> None:
     assert "CREATE TABLE burnout_risk_evaluations" in rendered
     assert "ON DELETE SET NULL" in rendered
     assert "ON DELETE CASCADE" in rendered
+    assert "ix_emotion_results_user_record_date_analyzed_at" in rendered
+    assert "ix_behavioral_baselines_user_status_window_end" in rendered
     assert str(Path("20260725_0002_add_behavioral_persistence")) not in rendered
 
 
 def test_postgresql_offline_downgrade_sql_can_be_rendered() -> None:
+    output = io.StringIO()
+    config = Config(
+        str(BACKEND_ROOT / "alembic.ini"),
+        output_buffer=output,
+    )
+    config.set_main_option(
+        "sqlalchemy.url",
+        "postgresql+psycopg://user:password@localhost/aigent",
+    )
+
+    command.downgrade(
+        config,
+        "20260727_0004:20260727_0003",
+        sql=True,
+    )
+
+    rendered = output.getvalue()
+    assert "DROP INDEX ix_behavioral_baselines_user_status_window_end" in rendered
+    assert "DROP INDEX ix_emotion_results_user_record_date_analyzed_at" in rendered
+    assert "ALTER TABLE behavioral_baselines" in rendered
+
+
+def test_previous_postgresql_offline_downgrade_sql_can_be_rendered() -> None:
     output = io.StringIO()
     config = Config(
         str(BACKEND_ROOT / "alembic.ini"),

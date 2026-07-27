@@ -4,8 +4,10 @@ The backend is a FastAPI service with SQLAlchemy models and Alembic-managed
 schema migrations. Python 3.12 is the supported development version.
 
 The internal behavioral and risk-result persistence layer is documented in
-[`docs/behavioral_persistence.md`](docs/behavioral_persistence.md). It does
-not add API endpoints or AI-service calls.
+[`docs/behavioral_persistence.md`](docs/behavioral_persistence.md). The
+orchestrated Risk Evaluation API and its transaction, error, and legacy-data
+policies are documented in
+[`docs/risk_evaluation_api.md`](docs/risk_evaluation_api.md).
 
 ## Dependency layout
 

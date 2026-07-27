@@ -1,3 +1,4 @@
+from app.models.assessment import AssessmentAnchor, AssessmentType, InterpretationScope
 from app.models.persistence import (
     BehavioralBaseline,
     BehavioralDailyRecord,
@@ -9,6 +10,9 @@ from app.models.persistence import (
 from app.models.user import User, UserType
 
 __all__ = [
+    "AssessmentAnchor",
+    "AssessmentType",
+    "InterpretationScope",
     "BehavioralBaseline",
     "BehavioralDailyRecord",
     "BurnoutRiskEvaluation",

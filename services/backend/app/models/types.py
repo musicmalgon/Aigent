@@ -4,7 +4,7 @@ import math
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime
+from sqlalchemy import JSON, DateTime, String
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.types import TypeDecorator
 
@@ -35,6 +35,33 @@ class StrictJSON(TypeDecorator[Any]):
     ) -> Any:
         _validate_json_numbers(value)
         return value
+
+
+class ArbitraryInteger(TypeDecorator[int]):
+    """Persist Python integers exactly without imposing a 64-bit limit."""
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(
+        self,
+        value: int | None,
+        dialect: Dialect,
+    ) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError("value must be an integer")
+        return str(value)
+
+    def process_result_value(
+        self,
+        value: str | int | None,
+        dialect: Dialect,
+    ) -> int | None:
+        if value is None:
+            return None
+        return int(value)
 
 
 class UTCDateTime(TypeDecorator[datetime]):
@@ -69,4 +96,4 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value.astimezone(UTC)
 
 
-__all__ = ["StrictJSON", "UTCDateTime"]
+__all__ = ["ArbitraryInteger", "StrictJSON", "UTCDateTime"]

@@ -17,11 +17,19 @@ from app.repositories.behavioral_records import (
     get_daily_record_by_date,
     list_daily_records,
 )
-from app.schemas.persistence import DailyRecordCreate, DailyRecordRead
+from app.schemas.behavioral_records import DailyRecordCreate, DailyRecordRead
+from app.services.behavioral_record_mapper import (
+    DailyRecordMetadataUnavailableError,
+    to_daily_record_read,
+    to_persistence_create,
+)
 
 DEFAULT_RANGE_DAYS = 14
 MAX_RANGE_DAYS = 28
 DAILY_RECORD_UNIQUE_CONSTRAINT = "uq_behavioral_daily_records_user_date"
+DAILY_RECORD_METADATA_UNAVAILABLE_DETAIL = (
+    "Behavioral record field metadata is unavailable."
+)
 
 router = APIRouter(
     prefix="/api/v1/behavioral-records",
@@ -60,6 +68,18 @@ def _duplicate_error() -> HTTPException:
     )
 
 
+def _serialize_daily_record(
+    record: BehavioralDailyRecord,
+) -> DailyRecordRead:
+    try:
+        return to_daily_record_read(record)
+    except DailyRecordMetadataUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=DAILY_RECORD_METADATA_UNAVAILABLE_DETAIL,
+        ) from exc
+
+
 def _resolve_date_range(
     date_from: date | None,
     date_to: date | None,
@@ -71,9 +91,7 @@ def _resolve_date_range(
         )
 
     resolved_to = date_to or _utc_today()
-    resolved_from = date_from or (
-        resolved_to - timedelta(days=DEFAULT_RANGE_DAYS - 1)
-    )
+    resolved_from = date_from or (resolved_to - timedelta(days=DEFAULT_RANGE_DAYS - 1))
 
     if resolved_from > resolved_to:
         raise HTTPException(
@@ -97,18 +115,18 @@ def create_behavioral_record(
     payload: DailyRecordCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> BehavioralDailyRecord:
-    if payload.record_date > _today_in_timezone(payload.timezone):
+) -> DailyRecordRead:
+    if payload.date > _today_in_timezone(payload.time_zone):
         raise HTTPException(
             status_code=422,
-            detail="record_date cannot be in the future for the submitted timezone.",
+            detail="date cannot be in the future for the submitted time_zone.",
         )
 
     try:
         record = create_daily_record(
             db,
             user_id=current_user.id,
-            payload=payload,
+            payload=to_persistence_create(payload),
         )
         db.commit()
     except PersistenceConflictError as exc:
@@ -124,7 +142,7 @@ def create_behavioral_record(
         raise
 
     db.refresh(record)
-    return record
+    return _serialize_daily_record(record)
 
 
 @router.get("", response_model=list[DailyRecordRead])
@@ -133,14 +151,17 @@ def read_behavioral_records(
     db: Session = Depends(get_db),
     date_from: date | None = None,
     date_to: date | None = None,
-) -> list[BehavioralDailyRecord]:
+) -> list[DailyRecordRead]:
     resolved_from, resolved_to = _resolve_date_range(date_from, date_to)
-    return list_daily_records(
-        db,
-        user_id=current_user.id,
-        start_date=resolved_from,
-        end_date=resolved_to,
-    )
+    return [
+        _serialize_daily_record(record)
+        for record in list_daily_records(
+            db,
+            user_id=current_user.id,
+            start_date=resolved_from,
+            end_date=resolved_to,
+        )
+    ]
 
 
 @router.get("/{record_date}", response_model=DailyRecordRead)
@@ -148,7 +169,7 @@ def read_behavioral_record(
     record_date: date,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> BehavioralDailyRecord:
+) -> DailyRecordRead:
     record = get_daily_record_by_date(
         db,
         user_id=current_user.id,
@@ -159,7 +180,7 @@ def read_behavioral_record(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Behavioral record not found.",
         )
-    return record
+    return _serialize_daily_record(record)
 
 
 __all__ = ["router"]

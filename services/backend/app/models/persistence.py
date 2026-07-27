@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
@@ -15,13 +15,14 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Time,
     UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.types import StrictJSON, UTCDateTime
+from app.models.types import ArbitraryInteger, StrictJSON, UTCDateTime
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -65,6 +66,15 @@ class BehavioralDailyRecord(Base):
             name="ck_daily_sleep_minutes",
         ),
         CheckConstraint(
+            "steps IS NULL OR CAST(steps AS NUMERIC) >= 0",
+            name="ck_daily_steps",
+        ),
+        CheckConstraint(
+            "active_minutes IS NULL OR "
+            "(active_minutes >= 0 AND active_minutes <= 1440)",
+            name="ck_daily_active_minutes",
+        ),
+        CheckConstraint(
             "study_work_minutes IS NULL OR "
             "(study_work_minutes >= 0 AND study_work_minutes <= 1440)",
             name="ck_daily_study_work_minutes",
@@ -80,7 +90,7 @@ class BehavioralDailyRecord(Base):
             name="ck_daily_exercise_minutes",
         ),
         CheckConstraint(
-            "schedule_count IS NULL OR schedule_count >= 0",
+            "schedule_count IS NULL OR CAST(schedule_count AS NUMERIC) >= 0",
             name="ck_daily_schedule_count",
         ),
         CheckConstraint(
@@ -89,8 +99,7 @@ class BehavioralDailyRecord(Base):
             name="ck_daily_subjective_stress",
         ),
         CheckConstraint(
-            "subjective_fatigue IS NULL OR "
-            "(subjective_fatigue >= 0 AND subjective_fatigue <= 10)",
+            "subjective_fatigue IS NULL OR subjective_fatigue >= 0",
             name="ck_daily_subjective_fatigue",
         ),
         CheckConstraint(
@@ -111,10 +120,14 @@ class BehavioralDailyRecord(Base):
     )
     record_date: Mapped[date] = mapped_column(Date, nullable=False)
     sleep_minutes: Mapped[int | None] = mapped_column(Integer)
+    bedtime: Mapped[time | None] = mapped_column(Time(timezone=False))
+    wake_time: Mapped[time | None] = mapped_column(Time(timezone=False))
+    steps: Mapped[int | None] = mapped_column(ArbitraryInteger())
+    active_minutes: Mapped[int | None] = mapped_column(Integer)
     study_work_minutes: Mapped[int | None] = mapped_column(Integer)
     rest_minutes: Mapped[int | None] = mapped_column(Integer)
     exercise_minutes: Mapped[int | None] = mapped_column(Integer)
-    schedule_count: Mapped[int | None] = mapped_column(Integer)
+    schedule_count: Mapped[int | None] = mapped_column(ArbitraryInteger())
     subjective_stress: Mapped[float | None] = mapped_column(Float)
     subjective_fatigue: Mapped[float | None] = mapped_column(Float)
     source: Mapped[DailyRecordSource] = mapped_column(
@@ -137,6 +150,8 @@ class BehavioralDailyRecord(Base):
         nullable=False,
     )
     data_completeness: Mapped[float | None] = mapped_column(Float)
+    source_by_field: Mapped[dict[str, str] | None] = mapped_column(StrictJSON())
+    coverage_by_field: Mapped[dict[str, str] | None] = mapped_column(StrictJSON())
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         default=_utc_now,

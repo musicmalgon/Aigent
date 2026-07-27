@@ -21,7 +21,7 @@ from app.models.persistence import (
 from app.repositories.behavioral_records import create_daily_record
 from app.repositories.emotion_results import create_emotion_result
 from app.schemas.persistence import (
-    DailyRecordCreate,
+    DailyRecordPersistenceCreate,
     EmotionLabel,
     EmotionResultCreate,
 )
@@ -68,7 +68,7 @@ def seed_daily_records(
             create_daily_record(
                 session,
                 user_id=user_id,
-                payload=DailyRecordCreate.model_validate(values),
+                payload=DailyRecordPersistenceCreate.model_validate(values),
             )
         session.commit()
 
@@ -300,9 +300,7 @@ def test_future_as_of_date_is_rejected_without_write(
     )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": "as_of_date cannot be in the future."
-    }
+    assert response.json() == {"detail": "as_of_date cannot be in the future."}
     assert baseline_count(migrated_engine, user_id=user_id) == 0
 
 
@@ -359,9 +357,10 @@ def test_repeated_period_creation_is_append_only(
         first.json()["id"],
         second.json()["id"],
     }
-    assert next(
-        item for item in history.json() if item["id"] == first.json()["id"]
-    ) == first.json()
+    assert (
+        next(item for item in history.json() if item["id"] == first.json()["id"])
+        == first.json()
+    )
 
 
 def test_aggregation_scope_bounds_latest_emotion_nulls_zero_and_rounding(
@@ -651,10 +650,7 @@ def test_history_includes_both_statuses_duplicates_and_is_user_scoped(
         client,
         email="other-history@example.com",
     )
-    timestamps = [
-        datetime(2026, 7, 20, hour, tzinfo=UTC)
-        for hour in (8, 9, 10)
-    ]
+    timestamps = [datetime(2026, 7, 20, hour, tzinfo=UTC) for hour in (8, 9, 10)]
     ids = seed_baselines(
         migrated_engine,
         user_id=user_id,
@@ -700,9 +696,7 @@ def test_history_includes_both_statuses_duplicates_and_is_user_scoped(
         "ready",
         "insufficient",
     }
-    assert [item["window_end"] for item in response.json()].count(
-        "2026-07-20"
-    ) == 2
+    assert [item["window_end"] for item in response.json()].count("2026-07-20") == 2
 
 
 def test_history_status_and_period_end_filters_are_inclusive(

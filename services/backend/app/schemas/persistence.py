@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from enum import StrEnum
 from typing import Annotated, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -21,6 +21,7 @@ from app.models.persistence import (
 DayMinutes = Annotated[int, Field(ge=0, le=1440)]
 NonNegativeInteger = Annotated[int, Field(ge=0)]
 SubjectiveRating = Annotated[float, Field(ge=0, le=10)]
+NonNegativeNumber = Annotated[float, Field(ge=0)]
 Probability = Annotated[float, Field(ge=0, le=1)]
 
 
@@ -41,18 +42,36 @@ class PersistenceSchema(BaseModel):
     )
 
 
-class DailyRecordCreate(PersistenceSchema):
+class DailyRecordPersistenceCreate(PersistenceSchema):
     record_date: date
     sleep_minutes: DayMinutes | None = None
+    bedtime: time | None = None
+    wake_time: time | None = None
+    steps: NonNegativeInteger | None = None
+    active_minutes: DayMinutes | None = None
     study_work_minutes: DayMinutes | None = None
     rest_minutes: DayMinutes | None = None
     exercise_minutes: DayMinutes | None = None
     schedule_count: NonNegativeInteger | None = None
     subjective_stress: SubjectiveRating | None = None
-    subjective_fatigue: SubjectiveRating | None = None
+    subjective_fatigue: NonNegativeNumber | None = None
     source: DailyRecordSource = DailyRecordSource.MANUAL
     timezone: Annotated[str, Field(min_length=1, max_length=64)] = "UTC"
     data_completeness: Probability | None = None
+    source_by_field: dict[str, str] | None = None
+    coverage_by_field: dict[str, str] | None = None
+
+    @field_validator("bedtime", "wake_time")
+    @classmethod
+    def validate_local_time(cls, value: time | None) -> time | None:
+        if value is not None and (
+            value.tzinfo is not None or value.microsecond != 0
+        ):
+            raise ValueError(
+                "bedtime and wake_time must be whole-second local times "
+                "without a UTC offset"
+            )
+        return value
 
     @field_validator("timezone")
     @classmethod
@@ -62,13 +81,6 @@ class DailyRecordCreate(PersistenceSchema):
         except ZoneInfoNotFoundError as exc:
             raise ValueError("timezone must be a valid IANA zone") from exc
         return value
-
-
-class DailyRecordRead(DailyRecordCreate):
-    id: str
-    user_id: str
-    created_at: datetime
-    updated_at: datetime
 
 
 class EmotionResultCreate(PersistenceSchema):
@@ -139,8 +151,7 @@ class RiskEvaluationRead(PersistenceSchema):
 
 __all__ = [
     "BaselineRead",
-    "DailyRecordCreate",
-    "DailyRecordRead",
+    "DailyRecordPersistenceCreate",
     "EmotionLabel",
     "EmotionResultCreate",
     "EmotionResultRead",

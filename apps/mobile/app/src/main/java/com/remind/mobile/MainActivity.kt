@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,10 +25,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
+import com.remind.mobile.network.ApiClient
+import com.remind.mobile.network.LoginRequest
+import com.remind.mobile.network.SignupRequest
 import com.remind.mobile.ui.theme.ReMindTheme
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+
+private const val TEST_ACCOUNT_EMAIL = "remind-poc-tester@example.com"
+private const val TEST_ACCOUNT_PASSWORD = "PoCTester!2026"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,6 +62,10 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
     var statusText by remember { mutableStateOf("Health Connect 상태 확인 중...") }
     var permissionGranted by remember { mutableStateOf(false) }
     var resultText by remember { mutableStateOf("아직 조회하지 않음") }
+
+    var authToken by remember { mutableStateOf<String?>(null) }
+    var loginStatusText by remember { mutableStateOf("로그인 안 됨") }
+    var submitResultText by remember { mutableStateOf("아직 전송하지 않음") }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract()
@@ -110,5 +124,70 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
         }
 
         Text(text = resultText)
+
+        HorizontalDivider()
+        Text(text = "백엔드 연동 (2단계)")
+        Text(text = loginStatusText)
+
+        Button(
+            onClick = {
+                scope.launch {
+                    loginStatusText = "로그인 시도 중..."
+                    try {
+                        try {
+                            ApiClient.service.signup(
+                                SignupRequest(TEST_ACCOUNT_EMAIL, TEST_ACCOUNT_PASSWORD)
+                            )
+                        } catch (e: HttpException) {
+                            if (e.code() != 409) throw e
+                        }
+                        val tokenResponse = ApiClient.service.login(
+                            LoginRequest(TEST_ACCOUNT_EMAIL, TEST_ACCOUNT_PASSWORD)
+                        )
+                        authToken = tokenResponse.accessToken
+                        loginStatusText = "로그인 성공"
+                    } catch (e: Exception) {
+                        authToken = null
+                        loginStatusText = "로그인 실패: ${e.message}"
+                    }
+                }
+            }
+        ) {
+            Text("테스트 계정 로그인")
+        }
+
+        Button(
+            onClick = {
+                val token = authToken ?: return@Button
+                scope.launch {
+                    submitResultText = "전송 중..."
+                    try {
+                        val zoneId = ZoneId.systemDefault()
+                        val targetDate = LocalDate.now(zoneId).minusDays(1)
+                        val start = targetDate.atStartOfDay(zoneId).toInstant()
+                        val end = targetDate.plusDays(1).atStartOfDay(zoneId).toInstant()
+
+                        val steps = manager.readStepsTotal(start, end)
+                        val sleepSessions = manager.readSleepSessions(start, end)
+                        val record = buildDailyRecordCreate(targetDate, zoneId, steps, sleepSessions)
+
+                        val response = ApiClient.service.createDailyRecord(
+                            "Bearer $token",
+                            record,
+                        )
+                        submitResultText = "저장 성공 (${response.date}): " +
+                            "steps=${response.steps ?: "없음"}, " +
+                            "sleep=${response.sleepMinutes ?: "없음"}분"
+                    } catch (e: Exception) {
+                        submitResultText = "전송 실패: ${e.message}"
+                    }
+                }
+            },
+            enabled = permissionGranted && authToken != null
+        ) {
+            Text("어제 데이터 서버로 전송")
+        }
+
+        Text(text = submitResultText)
     }
 }

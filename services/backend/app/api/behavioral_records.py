@@ -14,6 +14,7 @@ from app.models.user import User
 from app.repositories import PersistenceConflictError
 from app.repositories.behavioral_records import (
     create_daily_record,
+    delete_daily_record,
     get_daily_record_by_date,
     list_daily_records,
     update_daily_record,
@@ -227,5 +228,31 @@ def update_behavioral_record(
     db.refresh(record)
     return _serialize_daily_record(record)
 
+@router.delete(
+    "/{record_date}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_behavioral_record(
+    record_date: date,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    record = get_daily_record_by_date(
+        db,
+        user_id=current_user.id,
+        record_date=record_date,
+    )
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Behavioral record not found.",
+        )
+
+    try:
+        delete_daily_record(db, record=record)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
 
 __all__ = ["router"]

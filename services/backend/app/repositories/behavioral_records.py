@@ -98,6 +98,13 @@ def update_daily_record(
     session.flush()
     return record
 
+def delete_daily_record(
+    session: Session,
+    *,
+    record: BehavioralDailyRecord,
+) -> None:
+    session.delete(record)
+    session.flush()
 
 __all__ = [
     "create_daily_record",
@@ -105,4 +112,5 @@ __all__ = [
     "get_daily_record_by_date",
     "list_daily_records",
     "update_daily_record",
+    "delete_daily_record",
 ]

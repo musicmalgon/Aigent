@@ -43,6 +43,7 @@ class User(Base):
         nullable=False,
     )
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
     user_type: Mapped[UserType | None] = mapped_column(
         Enum(UserType, name="usertype"),
         nullable=True,

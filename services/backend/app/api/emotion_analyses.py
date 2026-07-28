@@ -19,6 +19,11 @@ from app.clients.ai import (
 from app.core.database import get_db
 from app.models.user import User
 from app.repositories.behavioral_records import get_daily_record_by_date
+from app.repositories.emotion_results import (
+    get_emotion_result,
+    get_latest_emotion_result,
+    list_emotion_results,
+)
 from app.schemas.emotion_analysis import (
     EmotionAnalysisCreate,
     EmotionAnalysisRead,
@@ -130,6 +135,50 @@ async def create_emotion_analysis(
         ) from None
 
     return response
+
+
+@router.get("", response_model=list[EmotionAnalysisRead])
+def read_emotion_analyses(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[EmotionAnalysisRead]:
+    return [
+        EmotionAnalysisRead.model_validate(result)
+        for result in list_emotion_results(db, user_id=current_user.id)
+    ]
+
+
+@router.get("/latest", response_model=EmotionAnalysisRead)
+def read_latest_emotion_analysis(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EmotionAnalysisRead:
+    result = get_latest_emotion_result(db, user_id=current_user.id)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No emotion analysis results found.",
+        )
+    return EmotionAnalysisRead.model_validate(result)
+
+
+@router.get("/{result_id}", response_model=EmotionAnalysisRead)
+def read_emotion_analysis(
+    result_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EmotionAnalysisRead:
+    result = get_emotion_result(
+        db,
+        user_id=current_user.id,
+        result_id=result_id,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Emotion analysis result not found.",
+        )
+    return EmotionAnalysisRead.model_validate(result)
 
 
 __all__ = ["router"]

@@ -4,15 +4,25 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
-import sys
 
 import pytest
 from ai.src.remind_ai.data.emotion_dataset import load_json_samples
+from ai.src.remind_ai.data.emotion_label_mapping import (
+    load_emotion_label_mapping,
+)
+from ai.src.remind_ai.data.emotion_taxonomy_v2 import (
+    EXPECTED_V2_LABELS,
+    load_emotion_label_policy_v2,
+    prepare_remind_coarse_v2,
+)
 from ai.src.remind_ai.data.group_split import select_group_safe_split
-
+from ai.src.remind_ai.data.private_split_assignment import (
+    write_private_split_assignment,
+)
 
 torch = pytest.importorskip("torch")
 
@@ -159,9 +169,7 @@ def _prepare_inputs(
     (tfidf_dir / "run_config.json").write_text(
         json.dumps({"random_state": 42, "candidate_count": 200}), encoding="utf-8"
     )
-    (tfidf_dir / "split_summary.json").write_text(
-        json.dumps(summary), encoding="utf-8"
-    )
+    (tfidf_dir / "split_summary.json").write_text(json.dumps(summary), encoding="utf-8")
     (tfidf_dir / "validation_metrics.json").write_text(
         json.dumps({"selected_model": "char_tfidf"}), encoding="utf-8"
     )
@@ -206,9 +214,7 @@ def _prepare_coarse_inputs(
     (tfidf_dir / "run_config.json").write_text(
         json.dumps({"random_state": 42, "candidate_count": 200}), encoding="utf-8"
     )
-    (tfidf_dir / "split_summary.json").write_text(
-        json.dumps(summary), encoding="utf-8"
-    )
+    (tfidf_dir / "split_summary.json").write_text(json.dumps(summary), encoding="utf-8")
     (tfidf_dir / "validation_metrics.json").write_text(
         json.dumps({"selected_model": "char_tfidf"}), encoding="utf-8"
     )
@@ -227,6 +233,149 @@ def _prepare_coarse_inputs(
     return train_path, validation_path, tfidf_dir, output_dir
 
 
+def _prepare_v2_inputs(
+    module: ModuleType, tmp_path: Path
+) -> tuple[Path, Path, Path, Path, Path]:
+    train_path = tmp_path / "v2_training.json"
+    validation_path = tmp_path / "v2_validation.json"
+    annotation_path = tmp_path / "private_v2_annotations.json"
+    tfidf_dir = tmp_path / "tfidf-v2-source"
+    output_dir = tmp_path / "transformer-v2"
+    fine_labels = ("E10", "E60", "E30", "E50", "E20", "E25")
+    records: list[dict[str, object]] = []
+    for profile in range(6):
+        for label_index, label in enumerate(fine_labels):
+            talk_id = f"PRIVATE-V2-TALK-{profile}-{label_index}"
+            profile_id = f"PRIVATE-V2-PROFILE-{profile}"
+            record: dict[str, object] = {
+                "profile": {"emotion": {"type": label}},
+                "talk": {
+                    "content": {
+                        "HS01": (f"PRIVATE V2 UNIQUE {profile} {label_index}"),
+                        "HS02": f"PRIVATE V2 TURN {label_index}",
+                        "HS03": None,
+                    },
+                    "id": {
+                        "talk-id": talk_id,
+                        "profile-id": profile_id,
+                    },
+                },
+            }
+            records.append(record)
+    train_records = records[: 3 * len(fine_labels)]
+    validation_records = records[3 * len(fine_labels) :]
+    train_path.write_text(
+        json.dumps(train_records, ensure_ascii=False), encoding="utf-8"
+    )
+    validation_path.write_text(
+        json.dumps(validation_records, ensure_ascii=False), encoding="utf-8"
+    )
+    samples = [
+        *load_json_samples(train_path, "official_train"),
+        *load_json_samples(validation_path, "official_validation"),
+    ]
+    policy = load_emotion_label_policy_v2(
+        AI_SERVICE_ROOT / "config" / "emotion_label_policy_v2.json"
+    )
+    prepared = prepare_remind_coarse_v2(
+        samples,
+        load_emotion_label_mapping(
+            AI_SERVICE_ROOT / "config" / "emotion_label_mapping.json"
+        ),
+        policy,
+        dataset_release_id="synthetic-v2-release-001",
+    )
+    model_samples = list(prepared.samples)
+    split = select_group_safe_split(
+        model_samples,
+        random_state=42,
+        candidate_count=20,
+        require_evaluation_class_coverage=True,
+        require_normalized_text_isolation=True,
+    )
+    partitions = {
+        name: split.samples_for(model_samples, name)
+        for name in ("train", "validation", "test")
+    }
+    summary = module._split_summary(model_samples, partitions, split)
+    summary["random_state"] = 42
+    summary["requested_candidate_count"] = 20
+    tfidf_dir.mkdir()
+    (tfidf_dir / "run_config.json").write_text(
+        json.dumps(
+            {
+                "model_version": "tfidf-logreg-remind-coarse-v2",
+                "label_set_version": "remind-coarse-v2",
+                "dataset_release_id": "synthetic-v2-release-001",
+                "annotation_revision": None,
+                "common_private_split_assignment": ("private/split_assignment.json"),
+                "split_random_state": 42,
+                "candidate_count": 20,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (tfidf_dir / "split_summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False), encoding="utf-8"
+    )
+    (tfidf_dir / "label_classes.json").write_text(
+        json.dumps(
+            {
+                "label_set_version": "remind-coarse-v2",
+                "classes": list(EXPECTED_V2_LABELS),
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    synthetic_metrics = {
+        "accuracy": 0.5,
+        "macro_f1": 0.4,
+        "weighted_f1": 0.45,
+    }
+    (tfidf_dir / "validation_metrics.json").write_text(
+        json.dumps(
+            {
+                "selected_model": "char_tfidf",
+                "experiments": {"char_tfidf": {"metrics": synthetic_metrics}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tfidf_dir / "test_metrics.json").write_text(
+        json.dumps({"metrics": synthetic_metrics}), encoding="utf-8"
+    )
+    (tfidf_dir / "training_summary.json").write_text(
+        json.dumps({"total_elapsed_seconds": 1.0}), encoding="utf-8"
+    )
+    (tfidf_dir / "inference_benchmark.json").write_text(
+        json.dumps(
+            {
+                "protocol_version": "emotion-inference-benchmark-v1",
+                "device": "cpu",
+                "batches": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    write_private_split_assignment(
+        (tfidf_dir / "private" / "split_assignment.json").resolve(),
+        model_samples,
+        split,
+        label_set_version="remind-coarse-v2",
+        random_state=42,
+        candidate_count=20,
+    )
+    return (
+        train_path,
+        validation_path,
+        annotation_path,
+        tfidf_dir,
+        output_dir,
+    )
+
+
 def test_dry_run_reuses_split_and_writes_safe_artifacts(
     transformer_script: ModuleType,
     tmp_path: Path,
@@ -243,7 +392,9 @@ def test_dry_run_reuses_split_and_writes_safe_artifacts(
         "load_classifier",
         lambda config, labels: TinyClassifier(len(labels.classes)),
     )
-    monkeypatch.setattr(transformer_script, "create_data_collator", lambda value: _collate)
+    monkeypatch.setattr(
+        transformer_script, "create_data_collator", lambda value: _collate
+    )
     code = transformer_script.main(
         [
             "--train-json",
@@ -274,7 +425,9 @@ def test_dry_run_reuses_split_and_writes_safe_artifacts(
         "README.md",
     ):
         assert (output_dir / name).is_file()
-    summary = json.loads((output_dir / "split_summary.json").read_text(encoding="utf-8"))
+    summary = json.loads(
+        (output_dir / "split_summary.json").read_text(encoding="utf-8")
+    )
     assert summary["split_reused_from_tfidf"] is True
     for category in (
         "profile_id_overlap_count",
@@ -282,11 +435,15 @@ def test_dry_run_reuses_split_and_writes_safe_artifacts(
         "normalized_text_overlap_count",
     ):
         assert all(value == 0 for value in summary["overlap_checks"][category].values())
-    serialized = "".join(
-        path.read_text(encoding="utf-8")
-        for path in output_dir.iterdir()
-        if path.is_file()
-    ) + captured.out + captured.err
+    serialized = (
+        "".join(
+            path.read_text(encoding="utf-8")
+            for path in output_dir.iterdir()
+            if path.is_file()
+        )
+        + captured.out
+        + captured.err
+    )
     assert "PRIVATE USER TEXT" not in serialized
     assert "PRIVATE-PROFILE" not in serialized
     assert "PRIVATE-RAW" not in serialized
@@ -316,7 +473,9 @@ def test_coarse_dry_run_uses_six_labels_and_isolated_output(
         return TinyClassifier(len(labels.classes))
 
     monkeypatch.setattr(transformer_script, "load_classifier", load_classifier)
-    monkeypatch.setattr(transformer_script, "create_data_collator", lambda value: _collate)
+    monkeypatch.setattr(
+        transformer_script, "create_data_collator", lambda value: _collate
+    )
     code = transformer_script.main(
         [
             "--train-json",
@@ -364,7 +523,9 @@ def test_coarse_dry_run_uses_six_labels_and_isolated_output(
     assert report["original_sample_count"] == 48
     assert report["mapped_sample_count"] == 48
     assert report["sample_count_preserved"] is True
-    summary = json.loads((dry_output / "dry_run_summary.json").read_text(encoding="utf-8"))
+    summary = json.loads(
+        (dry_output / "dry_run_summary.json").read_text(encoding="utf-8")
+    )
     assert summary["model_classifier_num_labels"] == 6
     assert summary["smoke_backward_completed"] is True
     assert summary["temporary_checkpoint_saved_and_reloaded"] is True
@@ -403,6 +564,238 @@ def test_coarse_mode_rejects_max_length_outside_inference_contract(
     )
     with pytest.raises(transformer_script.TransformerBaselineFailure, match="128"):
         transformer_script.run(arguments)
+
+
+def test_annotation_manifest_requires_coarse_v2_label_level(
+    transformer_script: ModuleType,
+    tmp_path: Path,
+) -> None:
+    train_path, validation_path, tfidf_dir, output_dir = _prepare_coarse_inputs(
+        transformer_script, tmp_path
+    )
+    manifest = tmp_path / "private-review.json"
+    manifest.write_text("{}", encoding="utf-8")
+    arguments = transformer_script._build_parser().parse_args(
+        [
+            "--train-json",
+            str(train_path),
+            "--validation-json",
+            str(validation_path),
+            "--tfidf-output-dir",
+            str(tfidf_dir),
+            "--output-dir",
+            str(output_dir),
+            "--label-level",
+            "coarse",
+            "--annotation-manifest",
+            str(manifest),
+            "--dry-run",
+        ]
+    )
+
+    with pytest.raises(
+        transformer_script.TransformerBaselineFailure,
+        match="only be used with coarse-v2",
+    ):
+        transformer_script.run(arguments)
+
+
+def test_coarse_v2_dry_run_reuses_exact_tfidf_split_and_order(
+    transformer_script: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (
+        train_path,
+        validation_path,
+        annotation_path,
+        tfidf_dir,
+        output_dir,
+    ) = _prepare_v2_inputs(transformer_script, tmp_path)
+    tokenizer = TinyTokenizer()
+    classifier_sizes: list[int] = []
+
+    monkeypatch.setattr(transformer_script, "load_tokenizer", lambda name: tokenizer)
+
+    def load_classifier(config: Any, labels: Any) -> TinyClassifier:
+        del config
+        classifier_sizes.append(len(labels.classes))
+        return TinyClassifier(len(labels.classes))
+
+    monkeypatch.setattr(transformer_script, "load_classifier", load_classifier)
+    monkeypatch.setattr(
+        transformer_script,
+        "create_data_collator",
+        lambda value: _collate,
+    )
+    code = transformer_script.main(
+        [
+            "--train-json",
+            str(train_path),
+            "--validation-json",
+            str(validation_path),
+            "--dataset-release-id",
+            "synthetic-v2-release-001",
+            "--tfidf-output-dir",
+            str(tfidf_dir),
+            "--output-dir",
+            str(output_dir),
+            "--label-level",
+            "coarse-v2",
+            "--model-name",
+            "synthetic-model",
+            "--device",
+            "cpu",
+            "--random-state",
+            "7",
+            "--dry-run",
+            "--dry-run-samples",
+            "12",
+            "--disable-progress-bar",
+        ]
+    )
+    captured = capsys.readouterr()
+    dry_output = output_dir / "dry-run"
+
+    assert code == 0
+    assert classifier_sizes == [6]
+    labels = json.loads((dry_output / "label_classes.json").read_text(encoding="utf-8"))
+    run_config = json.loads(
+        (dry_output / "run_config.json").read_text(encoding="utf-8")
+    )
+    split_summary = json.loads(
+        (dry_output / "split_summary.json").read_text(encoding="utf-8")
+    )
+    assert labels["classes"] == list(EXPECTED_V2_LABELS)
+    assert labels["label_field"] == "deterministic_remind_coarse_v2"
+    assert "상처" not in labels["classes"]
+    assert run_config["model_version"] == "klue-roberta-remind-coarse-v2"
+    assert run_config["label_field"] == "deterministic_remind_coarse_v2"
+    assert run_config["dataset_release_id"] == "synthetic-v2-release-001"
+    assert run_config["annotation_revision"] is None
+    assert run_config["training_random_state"] == 7
+    assert run_config["split_random_state"] == 42
+    assert run_config["class_weighting_resolved"] == "balanced"
+    assert run_config["common_private_split_assignment_verified"] is True
+    assert split_summary["exact_private_split_assignment_verified"] is True
+    assert (dry_output / "preparation_report.json").is_file()
+    assert (dry_output / "label_policy_summary.json").is_file()
+    serialized = "".join(
+        path.read_text(encoding="utf-8")
+        for path in dry_output.iterdir()
+        if path.is_file()
+    )
+    assert "PRIVATE-V2-TALK" not in serialized
+    assert "PRIVATE-V2-PROFILE" not in serialized
+    assert str(annotation_path) not in serialized
+    assert str(train_path) not in serialized
+    assert "PRIVATE" not in captured.out + captured.err
+
+
+def test_coarse_v2_full_run_writes_apples_to_apples_comparison(
+    transformer_script: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (
+        train_path,
+        validation_path,
+        _annotation_path,
+        tfidf_dir,
+        output_dir,
+    ) = _prepare_v2_inputs(transformer_script, tmp_path)
+    tokenizer = TinyTokenizer()
+    monkeypatch.setattr(transformer_script, "load_tokenizer", lambda name: tokenizer)
+    monkeypatch.setattr(
+        transformer_script,
+        "load_classifier",
+        lambda config, labels: TinyClassifier(len(labels.classes)),
+    )
+    monkeypatch.setattr(
+        transformer_script,
+        "create_data_collator",
+        lambda value: _collate,
+    )
+    code = transformer_script.main(
+        [
+            "--train-json",
+            str(train_path),
+            "--validation-json",
+            str(validation_path),
+            "--dataset-release-id",
+            "synthetic-v2-release-001",
+            "--tfidf-output-dir",
+            str(tfidf_dir),
+            "--output-dir",
+            str(output_dir),
+            "--label-level",
+            "coarse-v2",
+            "--model-name",
+            "synthetic-model",
+            "--device",
+            "cpu",
+            "--epochs",
+            "1",
+            "--train-batch-size",
+            "6",
+            "--eval-batch-size",
+            "6",
+            "--gradient-accumulation-steps",
+            "1",
+            "--benchmark-warmup-runs",
+            "0",
+            "--benchmark-runs",
+            "1",
+            "--disable-progress-bar",
+        ]
+    )
+
+    assert code == 0
+    comparison = json.loads(
+        (output_dir / "comparison.json").read_text(encoding="utf-8")
+    )
+    metadata = json.loads(
+        (output_dir / "model_metadata.json").read_text(encoding="utf-8")
+    )
+    run_config = json.loads(
+        (output_dir / "run_config.json").read_text(encoding="utf-8")
+    )
+    trainer_state = json.loads(
+        (output_dir / "checkpoints" / "last" / "trainer_state.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert comparison["taxonomy_version"] == "remind-coarse-v2"
+    assert comparison["ordered_labels"] == list(EXPECTED_V2_LABELS)
+    assert comparison["common_private_split_verified"] is True
+    assert comparison["models"]["tfidf"]["model_version"] == (
+        "tfidf-logreg-remind-coarse-v2"
+    )
+    assert comparison["models"]["transformer"]["model_version"] == (
+        "klue-roberta-remind-coarse-v2"
+    )
+    assert metadata["labels"] == list(EXPECTED_V2_LABELS)
+    assert metadata["class_weighting"] == "balanced"
+    assert metadata["run_fingerprint"] == run_config["run_fingerprint"]
+    assert len(run_config["run_fingerprint"]) == 64
+    provenance = trainer_state["checkpoint_provenance"]
+    assert provenance["label_set_version"] == "remind-coarse-v2"
+    assert provenance["ordered_labels"] == list(EXPECTED_V2_LABELS)
+    assert provenance["dataset_release_id"] == "synthetic-v2-release-001"
+    assert len(provenance["exact_split_sha256"]) == 64
+    for name in (
+        "classification_report.json",
+        "confusion_matrix.json",
+        "evaluation_summary.json",
+        "inference_benchmark.json",
+        "training_history.json",
+        "test_metrics.json",
+        "evaluation_state.json",
+    ):
+        assert (output_dir / name).is_file()
+    assert (output_dir / "model").is_dir()
+    assert (output_dir / "tokenizer").is_dir()
 
 
 def test_relative_paths_and_split_mismatch_fail_without_path_disclosure(
@@ -455,6 +848,86 @@ def test_relative_paths_and_split_mismatch_fail_without_path_disclosure(
     assert str(train_path) not in captured.err
 
 
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [
+        ("--learning-rate", "NaN"),
+        ("--weight-decay", "Infinity"),
+        ("--warmup-ratio", "NaN"),
+        ("--max-grad-norm", "Infinity"),
+    ],
+)
+def test_nonfinite_hyperparameters_are_rejected_by_the_parser(
+    transformer_script: ModuleType, flag: str, value: str
+) -> None:
+    with pytest.raises(
+        transformer_script.TransformerBaselineFailure,
+        match="command arguments",
+    ):
+        transformer_script._build_parser().parse_args(
+            [
+                "--train-json",
+                "train.json",
+                "--validation-json",
+                "validation.json",
+                "--tfidf-output-dir",
+                "tfidf",
+                "--output-dir",
+                "output",
+                flag,
+                value,
+            ]
+        )
+
+
+def test_relative_local_model_name_is_rejected(
+    transformer_script: ModuleType, tmp_path: Path
+) -> None:
+    train_path, validation_path, tfidf_dir, output_dir = _prepare_inputs(
+        transformer_script, tmp_path
+    )
+    arguments = transformer_script._build_parser().parse_args(
+        [
+            "--train-json",
+            str(train_path),
+            "--validation-json",
+            str(validation_path),
+            "--tfidf-output-dir",
+            str(tfidf_dir),
+            "--output-dir",
+            str(output_dir),
+            "--model-name",
+            "../PRIVATE/models/checkpoint",
+            "--dry-run",
+        ]
+    )
+
+    with pytest.raises(
+        transformer_script.TransformerBaselineFailure,
+        match="public model identifier",
+    ):
+        transformer_script.run(arguments)
+
+
+def test_resume_provenance_mismatch_is_rejected_before_model_loading(
+    transformer_script: ModuleType, tmp_path: Path
+) -> None:
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.mkdir()
+    (checkpoint / "trainer_state.json").write_text(
+        json.dumps({"checkpoint_provenance": {"version": 1, "revision": 1}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        transformer_script.TransformerBaselineFailure,
+        match="does not match",
+    ):
+        transformer_script._validate_resume_checkpoint_provenance(
+            checkpoint, {"version": 1, "revision": 2}
+        )
+
+
 def test_completed_evaluation_is_blocked_unless_force_is_explicit(
     transformer_script: ModuleType,
     tmp_path: Path,
@@ -498,10 +971,11 @@ def test_completed_evaluation_is_blocked_unless_force_is_explicit(
         transformer_script.run(forced)
 
 
-def test_resume_checkpoint_is_used_but_never_serialized(
+def test_dry_run_rejects_resume_checkpoint_without_loading_or_serializing_it(
     transformer_script: ModuleType,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     train_path, validation_path, tfidf_dir, output_dir = _prepare_inputs(
         transformer_script, tmp_path
@@ -521,7 +995,9 @@ def test_resume_checkpoint_is_used_but_never_serialized(
 
     monkeypatch.setattr(transformer_script, "load_tokenizer", load_tokenizer)
     monkeypatch.setattr(transformer_script, "load_classifier", load_classifier)
-    monkeypatch.setattr(transformer_script, "create_data_collator", lambda value: _collate)
+    monkeypatch.setattr(
+        transformer_script, "create_data_collator", lambda value: _collate
+    )
     code = transformer_script.main(
         [
             "--train-json",
@@ -541,12 +1017,8 @@ def test_resume_checkpoint_is_used_but_never_serialized(
             "--dry-run",
         ]
     )
-    assert code == 0
-    assert loaded_sources == [str(checkpoint), str(checkpoint)]
-    serialized = "".join(
-        path.read_text(encoding="utf-8")
-        for path in output_dir.iterdir()
-        if path.is_file()
-    )
-    assert str(checkpoint) not in serialized
-    assert "PRIVATE-CHECKPOINT-PATH" not in serialized
+    captured = capsys.readouterr()
+    assert code == 2
+    assert loaded_sources == []
+    assert str(checkpoint) not in captured.err
+    assert not output_dir.exists()

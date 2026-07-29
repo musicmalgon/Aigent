@@ -9,9 +9,11 @@ from sqlalchemy.engine import Engine
 
 from app.admin import UserAdmin
 from app.api import (
+    assessments,
     auth,
     baselines,
     behavioral_records,
+    consents,
     emotion_analyses,
     risk_evaluations,
     users,
@@ -86,6 +88,8 @@ def create_app(
     application.include_router(emotion_analyses.router)
     application.include_router(baselines.router)
     application.include_router(risk_evaluations.router)
+    application.include_router(consents.router)
+    application.include_router(assessments.router, tags=["assessments"])
 
     @application.get("/")
     def health_check() -> dict[str, str]:

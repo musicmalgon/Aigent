@@ -467,7 +467,7 @@ def test_0004_downgrade_preflight_rejects_baseline_fatigue_above_ten(
         with engine.connect() as connection:
             assert (
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == "20260727_0004"
+                == "20260729_0005"
             )
             assert connection.scalar(
                 text(

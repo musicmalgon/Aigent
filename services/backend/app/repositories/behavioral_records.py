@@ -88,9 +88,31 @@ def list_daily_records(
     return list(session.scalars(statement))
 
 
+def update_daily_record(
+    session: Session,
+    *,
+    record: BehavioralDailyRecord,
+    payload: DailyRecordPersistenceCreate,
+) -> BehavioralDailyRecord:
+    for field, value in payload.model_dump(exclude={"record_date"}).items():
+        setattr(record, field, value)
+    session.add(record)
+    session.flush()
+    return record
+
+def delete_daily_record(
+    session: Session,
+    *,
+    record: BehavioralDailyRecord,
+) -> None:
+    session.delete(record)
+    session.flush()
+
 __all__ = [
     "create_daily_record",
     "get_daily_record",
     "get_daily_record_by_date",
     "list_daily_records",
+    "update_daily_record",
+    "delete_daily_record",
 ]

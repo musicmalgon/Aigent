@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
 import importlib
 import math
 import re
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 
 from .emotion_dataset import EmotionSample, normalize_text
 
@@ -158,7 +158,12 @@ def _candidate_score(
 
 
 def _partition_failure_reason(
-    samples: Sequence[EmotionSample], partitions: Sequence[Sequence[int]]
+    samples: Sequence[EmotionSample],
+    partitions: Sequence[Sequence[int]],
+    *,
+    require_evaluation_class_coverage: bool,
+    require_normalized_text_isolation: bool,
+    normalized_texts: Sequence[str] | None,
 ) -> str | None:
     if not all(partitions):
         return "empty_split"
@@ -169,9 +174,20 @@ def _partition_failure_reason(
                 return "profile_overlap"
             if _conversation_key_overlap_count(named[left_index], named[right_index]):
                 return "conversation_overlap"
+            if require_normalized_text_isolation and (
+                normalized_texts is None
+                or {normalized_texts[index] for index in partitions[left_index]}
+                & {normalized_texts[index] for index in partitions[right_index]}
+            ):
+                return "normalized_text_overlap"
     all_labels = {sample.label for sample in samples}
     if {sample.label for sample in named[0]} != all_labels:
         return "train_missing_classes"
+    if require_evaluation_class_coverage:
+        if {sample.label for sample in named[1]} != all_labels:
+            return "validation_missing_classes"
+        if {sample.label for sample in named[2]} != all_labels:
+            return "test_missing_classes"
     return None
 
 
@@ -204,6 +220,9 @@ def _search_candidates(
     start_offset: int,
     end_offset: int,
     failures: Counter[str],
+    require_evaluation_class_coverage: bool,
+    require_normalized_text_isolation: bool,
+    normalized_texts: Sequence[str] | None,
 ) -> GroupSplitResult | None:
     best: GroupSplitResult | None = None
     all_labels = {sample.label for sample in samples}
@@ -214,7 +233,13 @@ def _search_candidates(
         except (GroupSplitError, ValueError):
             failures["other"] += 1
             continue
-        failure_reason = _partition_failure_reason(samples, partitions)
+        failure_reason = _partition_failure_reason(
+            samples,
+            partitions,
+            require_evaluation_class_coverage=require_evaluation_class_coverage,
+            require_normalized_text_isolation=require_normalized_text_isolation,
+            normalized_texts=normalized_texts,
+        )
         if failure_reason is not None:
             failures[failure_reason] += 1
             continue
@@ -249,6 +274,8 @@ def select_group_safe_split(
     *,
     random_state: int = 42,
     candidate_count: int = 200,
+    require_evaluation_class_coverage: bool = False,
+    require_normalized_text_isolation: bool = False,
 ) -> GroupSplitResult:
     """Choose the lowest-score candidate that satisfies only hard constraints."""
 
@@ -259,7 +286,10 @@ def select_group_safe_split(
             "empty_split": 0,
             "profile_overlap": 0,
             "conversation_overlap": 0,
+            "normalized_text_overlap": 0,
             "train_missing_classes": 0,
+            "validation_missing_classes": 0,
+            "test_missing_classes": 0,
             "other": 0,
         },
     }
@@ -275,8 +305,22 @@ def select_group_safe_split(
         )
     if len({sample.group_id for sample in samples}) < 3:
         raise GroupSplitError("at least three profile groups are required", diagnostics)
+    if require_evaluation_class_coverage:
+        profiles_by_label: dict[str, set[str]] = {}
+        for sample in samples:
+            profiles_by_label.setdefault(sample.label, set()).add(sample.group_id)
+        if any(len(profiles) < 3 for profiles in profiles_by_label.values()):
+            raise GroupSplitError(
+                "every class requires at least three profile groups for strict evaluation",
+                diagnostics,
+            )
 
     failures = Counter[str]()
+    normalized_texts = (
+        tuple(_normalized_for_overlap(sample.text) for sample in samples)
+        if require_normalized_text_isolation
+        else None
+    )
     initial_limit = min(max(candidate_count, 200), 1_000)
     result = _search_candidates(
         samples,
@@ -284,6 +328,9 @@ def select_group_safe_split(
         start_offset=0,
         end_offset=initial_limit,
         failures=failures,
+        require_evaluation_class_coverage=require_evaluation_class_coverage,
+        require_normalized_text_isolation=require_normalized_text_isolation,
+        normalized_texts=normalized_texts,
     )
     fallback_used = result is None and initial_limit < 1_000
     if fallback_used:
@@ -293,6 +340,9 @@ def select_group_safe_split(
             start_offset=initial_limit,
             end_offset=1_000,
             failures=failures,
+            require_evaluation_class_coverage=require_evaluation_class_coverage,
+            require_normalized_text_isolation=require_normalized_text_isolation,
+            normalized_texts=normalized_texts,
         )
     evaluated_candidate_count = min(
         1_000 if fallback_used else initial_limit,
@@ -306,7 +356,10 @@ def select_group_safe_split(
             "empty_split",
             "profile_overlap",
             "conversation_overlap",
+            "normalized_text_overlap",
             "train_missing_classes",
+            "validation_missing_classes",
+            "test_missing_classes",
             "other",
         )
     }

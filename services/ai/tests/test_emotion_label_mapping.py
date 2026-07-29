@@ -6,21 +6,20 @@ import json
 from pathlib import Path
 
 import pytest
-
+from ai.src.emotion.base import ModelLoadError
 from ai.src.emotion.coarse_transformer import (
-    EXPECTED_ID2LABEL,
     resolve_coarse_artifacts,
     validate_coarse_artifact_metadata,
 )
 from ai.src.remind_ai.data.emotion_dataset import EmotionSample
 from ai.src.remind_ai.data.emotion_label_mapping import (
+    EXPECTED_COARSE_LABELS,
     EXPECTED_FINE_LABELS,
     EmotionLabelMappingError,
     load_emotion_label_mapping,
     map_samples_to_coarse,
     mapping_validation_report,
 )
-
 
 MAPPING_PATH = Path(__file__).resolve().parents[1] / "config" / "emotion_label_mapping.json"
 
@@ -33,7 +32,7 @@ def test_official_mapping_covers_all_sixty_labels_exactly_once() -> None:
     mapping = load_emotion_label_mapping(MAPPING_PATH)
     assert tuple(mapping.fine_to_coarse) == EXPECTED_FINE_LABELS
     assert len(mapping.coarse_labels) == 6
-    assert mapping.coarse_labels == tuple(EXPECTED_ID2LABEL.values())
+    assert mapping.coarse_labels == EXPECTED_COARSE_LABELS
     assert {value.coarse_name for value in mapping.fine_to_coarse.values()} == set(
         mapping.coarse_labels
     )
@@ -76,7 +75,7 @@ def test_invalid_mapping_file_fails_before_training(tmp_path: Path) -> None:
         load_emotion_label_mapping(invalid)
 
 
-def test_training_metadata_is_accepted_by_the_inference_loader(
+def test_v1_training_metadata_is_rejected_by_the_v2_inference_loader(
     tmp_path: Path,
 ) -> None:
     artifact = tmp_path / "coarse-artifact"
@@ -84,7 +83,7 @@ def test_training_metadata_is_accepted_by_the_inference_loader(
     tokenizer_dir = artifact / "tokenizer"
     model_dir.mkdir(parents=True)
     tokenizer_dir.mkdir()
-    labels = tuple(EXPECTED_ID2LABEL.values())
+    labels = EXPECTED_COARSE_LABELS
     (model_dir / "config.json").write_text(
         json.dumps(
             {
@@ -113,4 +112,5 @@ def test_training_metadata_is_accepted_by_the_inference_loader(
     )
 
     paths = resolve_coarse_artifacts(artifact_dir=artifact)
-    validate_coarse_artifact_metadata(paths)
+    with pytest.raises(ModelLoadError, match="label order"):
+        validate_coarse_artifact_metadata(paths)

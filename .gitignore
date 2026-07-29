@@ -9,6 +9,16 @@ ai/data/outputs/
 ai/data/reports/
 services/ai/data/outputs/
 services/ai/data/reports/
+services/ai/data/annotations/
+**/review_manifest*.json
+**/review_manifest*.jsonl
+**/annotation_manifest*.json
+**/annotation_manifest*.jsonl
+**/split_assignment*.json
+**/split_assignment*.jsonl
+**/prepared_samples*.jsonl
+**/error_analysis*.csv
+**/error_analysis*.jsonl
 services/ai/**/outputs/
 services/ai/**/checkpoints/
 services/ai/**/models/

@@ -1,6 +1,7 @@
 package com.remind.mobile
 
 import android.content.Context
+import android.content.Intent
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
@@ -32,6 +33,17 @@ class HealthConnectManager(private val context: Context) {
         val granted = hcClient.permissionController.getGrantedPermissions()
         return granted.containsAll(HEALTH_CONNECT_PERMISSIONS)
     }
+
+    /**
+     * Deep-links into Health Connect so the user can review/grant access
+     * outside our in-app request flow -- needed for the "revoked after
+     * granting" case, where the user turns permissions off from Health
+     * Connect's own settings instead of our app. Delegates to the
+     * library's own intent builder rather than hardcoding an action
+     * string, since it already picks the right target per OS version and
+     * falls back safely if the preferred screen isn't resolvable.
+     */
+    fun manageDataIntent(): Intent = HealthConnectClient.getHealthConnectManageDataIntent(context)
 
     /**
      * Returns null when no steps reading exists for the range. Callers must

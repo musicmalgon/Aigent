@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "remind_coarse_emotion_inference_response.schema.json",
+  "title": "RemindCoarseEmotionInferenceResponse",
+  "description": "Re:Mind v2 비의료적 6-class 감정 분류 결과.",
+  "$comment": "확률 합, argmax/confidence 일치, top_predictions 정렬은 서비스 런타임에서도 검증한다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "label_schema_version",
+    "model_version",
+    "threshold_version",
+    "predicted_emotion",
+    "predicted_label_id",
+    "emotion",
+    "confidence",
+    "margin",
+    "provisional",
+    "is_uncertain",
+    "uncertainty_reason",
+    "probabilities",
+    "top_predictions",
+    "latency_ms"
+  ],
+  "properties": {
+    "label_schema_version": {
+      "const": "remind-coarse-v2"
+    },
+    "model_version": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "threshold_version": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "predicted_emotion": {
+      "$ref": "#/$defs/emotionLabel"
+    },
+    "predicted_label_id": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "emotion": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/emotionLabel"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "confidence": {
+      "$ref": "#/$defs/probability"
+    },
+    "margin": {
+      "$ref": "#/$defs/probability"
+    },
+    "provisional": {
+      "type": "boolean"
+    },
+    "is_uncertain": {
+      "type": "boolean"
+    },
+    "uncertainty_reason": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/uncertaintyReason"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "probabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "분노",
+        "기쁨",
+        "불안",
+        "당황",
+        "슬픔",
+        "무기력"
+      ],
+      "properties": {
+        "분노": { "$ref": "#/$defs/probability" },
+        "기쁨": { "$ref": "#/$defs/probability" },
+        "불안": { "$ref": "#/$defs/probability" },
+        "당황": { "$ref": "#/$defs/probability" },
+        "슬픔": { "$ref": "#/$defs/probability" },
+        "무기력": { "$ref": "#/$defs/probability" }
+      }
+    },
+    "top_predictions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/topPrediction"
+      }
+    },
+    "latency_ms": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "predicted_emotion": { "const": "분노" } }, "required": ["predicted_emotion"] },
+      "then": { "properties": { "predicted_label_id": { "const": 0 } } }
+    },
+    {
+      "if": { "properties": { "predicted_emotion": { "const": "기쁨" } }, "required": ["predicted_emotion"] },
+      "then": { "properties": { "predicted_label_id": { "const": 1 } } }
+    },
+    {
+      "if": { "properties": { "predicted_emotion": { "const": "불안" } }, "required": ["predicted_emotion"] },
+      "then": { "properties": { "predicted_label_id": { "const": 2 } } }
+    },
+    {
+      "if": { "properties": { "predicted_emotion": { "const": "당황" } }, "required": ["predicted_emotion"] },
+      "then": { "properties": { "predicted_label_id": { "const": 3 } } }
+    },
+    {
+      "if": { "properties": { "predicted_emotion": { "const": "슬픔" } }, "required": ["predicted_emotion"] },
+      "then": { "properties": { "predicted_label_id": { "const": 4 } } }
+    },
+    {
+      "if": { "properties": { "predicted_emotion": { "const": "무기력" } }, "required": ["predicted_emotion"] },
+      "then": { "properties": { "predicted_label_id": { "const": 5 } } }
+    },
+    {
+      "if": { "properties": { "is_uncertain": { "const": false } }, "required": ["is_uncertain"] },
+      "then": { "properties": { "uncertainty_reason": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "is_uncertain": { "const": true } }, "required": ["is_uncertain"] },
+      "then": { "properties": { "uncertainty_reason": { "$ref": "#/$defs/uncertaintyReason" } } }
+    },
+    {
+      "if": { "properties": { "provisional": { "const": true } }, "required": ["provisional"] },
+      "then": {
+        "properties": {
+          "emotion": { "type": "null" },
+          "is_uncertain": { "const": true }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "provisional": { "const": false } }, "required": ["provisional"] },
+      "then": {
+        "properties": {
+          "emotion": { "$ref": "#/$defs/emotionLabel" },
+          "is_uncertain": { "const": false }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "emotionLabel": {
+      "type": "string",
+      "enum": [
+        "분노",
+        "기쁨",
+        "불안",
+        "당황",
+        "슬픔",
+        "무기력"
+      ]
+    },
+    "probability": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "uncertaintyReason": {
+      "type": "string",
+      "enum": [
+        "low_confidence",
+        "small_margin",
+        "low_confidence_and_small_margin"
+      ]
+    },
+    "topPrediction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "emotion",
+        "label_id",
+        "probability"
+      ],
+      "properties": {
+        "emotion": {
+          "$ref": "#/$defs/emotionLabel"
+        },
+        "label_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "probability": {
+          "$ref": "#/$defs/probability"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "emotion": { "const": "분노" } }, "required": ["emotion"] },
+          "then": { "properties": { "label_id": { "const": 0 } } }
+        },
+        {
+          "if": { "properties": { "emotion": { "const": "기쁨" } }, "required": ["emotion"] },
+          "then": { "properties": { "label_id": { "const": 1 } } }
+        },
+        {
+          "if": { "properties": { "emotion": { "const": "불안" } }, "required": ["emotion"] },
+          "then": { "properties": { "label_id": { "const": 2 } } }
+        },
+        {
+          "if": { "properties": { "emotion": { "const": "당황" } }, "required": ["emotion"] },
+          "then": { "properties": { "label_id": { "const": 3 } } }
+        },
+        {
+          "if": { "properties": { "emotion": { "const": "슬픔" } }, "required": ["emotion"] },
+          "then": { "properties": { "label_id": { "const": 4 } } }
+        },
+        {
+          "if": { "properties": { "emotion": { "const": "무기력" } }, "required": ["emotion"] },
+          "then": { "properties": { "label_id": { "const": 5 } } }
+        }
+      ]
+    }
+  },
+  "examples": [
+    {
+      "label_schema_version": "remind-coarse-v2",
+      "model_version": "klue-roberta-remind-coarse-v2",
+      "threshold_version": "mvp-v1",
+      "predicted_emotion": "무기력",
+      "predicted_label_id": 5,
+      "emotion": "무기력",
+      "confidence": 0.72,
+      "margin": 0.62,
+      "provisional": false,
+      "is_uncertain": false,
+      "uncertainty_reason": null,
+      "probabilities": {
+        "분노": 0.03,
+        "기쁨": 0.02,
+        "불안": 0.08,
+        "당황": 0.05,
+        "슬픔": 0.10,
+        "무기력": 0.72
+      },
+      "top_predictions": [
+        {
+          "emotion": "무기력",
+          "label_id": 5,
+          "probability": 0.72
+        },
+        {
+          "emotion": "슬픔",
+          "label_id": 4,
+          "probability": 0.10
+        }
+      ],
+      "latency_ms": 18.4
+    }
+  ]
+}

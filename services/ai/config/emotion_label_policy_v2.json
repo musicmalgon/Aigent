@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "label_set_version": "remind-coarse-v2",
+  "labels": [
+    "분노",
+    "기쁨",
+    "불안",
+    "당황",
+    "슬픔",
+    "무기력"
+  ],
+  "base_label_mapping": "official-coarse-v1",
+  "excluded_base_labels": [
+    "상처"
+  ],
+  "default_unreviewed_action": "keep_base_unless_excluded",
+  "fine_label_overrides": {
+    "E25": "무기력",
+    "E28": "무기력"
+  },
+  "annotation_key_fields": [
+    "official_split",
+    "profile_id",
+    "talk_id",
+    "source_text_sha256"
+  ],
+  "required_review_status": "approved",
+  "definitions": {
+    "분노": "분노, 짜증, 적개심 또는 강한 불쾌감이 문장의 중심인 상태",
+    "기쁨": "기쁨, 만족, 감사, 안도 또는 긍정적 기대가 문장의 중심인 상태",
+    "불안": "걱정, 두려움, 긴장 또는 통제하기 어려운 염려가 문장의 중심인 상태",
+    "당황": "당혹감, 혼란, 놀람, 수치심 또는 난처함이 문장의 중심인 상태",
+    "슬픔": "상실, 비통함, 우울감 또는 낙담이 중심이며 행동 에너지 고갈이 핵심은 아닌 상태",
+    "무기력": "의욕 저하, 에너지 고갈, 시작 회피 또는 행동을 시작하거나 지속할 힘이 없는 상태"
+  }
+}

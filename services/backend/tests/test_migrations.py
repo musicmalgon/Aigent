@@ -14,6 +14,7 @@ EXPECTED_USER_COLUMNS = {
     "id",
     "email",
     "hashed_password",
+    "name",
     "user_type",
     "created_at",
 }

@@ -2,23 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 import importlib
 import json
 import logging
-from pathlib import Path
 import threading
 import time
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ..remind_ai.data.transformer_dataset import transformer_inference_text
 from ..schemas import (
-    COARSE_EMOTION_LABELS,
-    COARSE_EMOTION_LABEL_TO_ID,
-    CoarseEmotionInferenceResponse,
+    REMIND_COARSE_EMOTION_LABEL_TO_ID,
+    REMIND_COARSE_EMOTION_LABELS,
+    REMIND_COARSE_EMOTION_SCHEMA_VERSION,
     CoarseEmotionInput,
-    CoarseEmotionTopPrediction,
+    RemindCoarseEmotionInferenceResponse,
+    RemindCoarseEmotionTopPrediction,
     UncertaintyReason,
 )
 from .base import (
@@ -30,12 +31,11 @@ from .base import (
     PredictionExecutionError,
     PredictionOutputError,
 )
-from .coarse_settings import CoarseEmotionSettings, TRAINING_MAX_LENGTH
-
+from .coarse_settings import TRAINING_MAX_LENGTH, CoarseEmotionSettings
 
 LOGGER = logging.getLogger(__name__)
 EXPECTED_ID2LABEL = {
-    index: label.value for index, label in enumerate(COARSE_EMOTION_LABELS)
+    index: label.value for index, label in enumerate(REMIND_COARSE_EMOTION_LABELS)
 }
 EXPECTED_LABEL2ID = {label: index for index, label in EXPECTED_ID2LABEL.items()}
 MODEL_WEIGHT_FILES = ("model.safetensors", "pytorch_model.bin")
@@ -46,6 +46,7 @@ TOKENIZER_FILES = ("tokenizer.json", "vocab.txt")
 class CoarseArtifactPaths:
     model_dir: Path
     tokenizer_dir: Path
+    label_classes_path: Path | None
     label_mapping_path: Path | None
     run_config_path: Path | None
 
@@ -106,9 +107,12 @@ def resolve_coarse_artifacts(
     if resolved_tokenizer is None or not _has_tokenizer(resolved_tokenizer):
         raise ModelArtifactNotFoundError("coarse tokenizer files were not found")
 
+    label_classes = (
+        root / "label_classes.json"
+        if root is not None and (root / "label_classes.json").is_file()
+        else None
+    )
     mapping = Path(label_mapping_path) if label_mapping_path is not None else None
-    if mapping is None and root is not None and (root / "label_mapping.json").is_file():
-        mapping = root / "label_mapping.json"
     if mapping is not None and not mapping.is_file():
         raise ModelArtifactNotFoundError("coarse label mapping file was not found")
     run_config = (
@@ -119,6 +123,7 @@ def resolve_coarse_artifacts(
     return CoarseArtifactPaths(
         model_dir=resolved_model,
         tokenizer_dir=resolved_tokenizer,
+        label_classes_path=label_classes,
         label_mapping_path=mapping,
         run_config_path=run_config,
     )
@@ -156,18 +161,32 @@ def validate_coarse_artifact_metadata(paths: CoarseArtifactPaths) -> None:
 
     config = _read_json_object(paths.model_dir / "config.json", "model config")
     _validated_config_labels(config)
+    if paths.label_classes_path is not None:
+        labels = _read_json_object(paths.label_classes_path, "label classes")
+        if (
+            labels.get("classes") != list(EXPECTED_LABEL2ID)
+            or labels.get("id2label")
+            != {str(index): label for index, label in EXPECTED_ID2LABEL.items()}
+            or labels.get("label2id") != EXPECTED_LABEL2ID
+            or labels.get("label_set_version")
+            != REMIND_COARSE_EMOTION_SCHEMA_VERSION
+        ):
+            raise ModelLoadError("label classes do not match the v2 contract")
     if paths.label_mapping_path is not None:
         mapping = _read_json_object(paths.label_mapping_path, "label mapping")
         if mapping.get("coarse_labels") != [
-            label.value for label in COARSE_EMOTION_LABELS
+            label.value for label in REMIND_COARSE_EMOTION_LABELS
         ]:
             raise ModelLoadError("label mapping does not match the coarse contract")
     if paths.run_config_path is not None:
         run_config = _read_json_object(paths.run_config_path, "run config")
-        if run_config.get("label_level") != "coarse" or run_config.get(
-            "num_labels"
-        ) != 6:
-            raise ModelLoadError("run config is not a six-class coarse experiment")
+        if (
+            run_config.get("label_level") != "coarse-v2"
+            or run_config.get("label_set_version")
+            != REMIND_COARSE_EMOTION_SCHEMA_VERSION
+            or run_config.get("num_labels") != 6
+        ):
+            raise ModelLoadError("run config is not a six-class v2 experiment")
         artifact_max_length = run_config.get("max_length")
         if (
             artifact_max_length is not None
@@ -306,12 +325,14 @@ class CoarseTransformerEmotionAnalyzer:
                 self.settings.model_version,
             )
 
-    def predict(self, request: CoarseEmotionInput) -> CoarseEmotionInferenceResponse:
+    def predict(
+        self, request: CoarseEmotionInput
+    ) -> RemindCoarseEmotionInferenceResponse:
         return self.predict_batch([request])[0]
 
     def predict_batch(
         self, requests: Sequence[CoarseEmotionInput]
-    ) -> list[CoarseEmotionInferenceResponse]:
+    ) -> list[RemindCoarseEmotionInferenceResponse]:
         if not requests:
             raise ValueError("at least one inference request is required")
         if not self.is_loaded:
@@ -379,35 +400,44 @@ class CoarseTransformerEmotionAnalyzer:
 
     def _response_from_probabilities(
         self, values: Sequence[float], latency_ms: float
-    ) -> CoarseEmotionInferenceResponse:
+    ) -> RemindCoarseEmotionInferenceResponse:
         if len(values) != 6:
             raise PredictionOutputError("model output does not contain six logits")
         probabilities = {
             label: float(values[index])
-            for index, label in enumerate(COARSE_EMOTION_LABELS)
+            for index, label in enumerate(REMIND_COARSE_EMOTION_LABELS)
         }
         ordered = sorted(
             probabilities.items(),
-            key=lambda item: (-item[1], COARSE_EMOTION_LABEL_TO_ID[item[0]]),
+            key=lambda item: (
+                -item[1],
+                REMIND_COARSE_EMOTION_LABEL_TO_ID[item[0]],
+            ),
         )
         winner, confidence = ordered[0]
+        margin = confidence - ordered[1][1]
         reason = classify_uncertainty(
             values,
             confidence_threshold=self.settings.confidence_threshold,
             margin_threshold=self.settings.margin_threshold,
         )
-        return CoarseEmotionInferenceResponse(
+        return RemindCoarseEmotionInferenceResponse(
+            label_schema_version="remind-coarse-v2",
             model_version=self.settings.model_version,
+            threshold_version=self.settings.threshold_version,
             predicted_emotion=winner,
-            predicted_label_id=COARSE_EMOTION_LABEL_TO_ID[winner],
+            predicted_label_id=REMIND_COARSE_EMOTION_LABEL_TO_ID[winner],
+            emotion=None if reason is not None else winner,
             confidence=confidence,
+            margin=margin,
+            provisional=reason is not None,
             is_uncertain=reason is not None,
             uncertainty_reason=reason,
             probabilities=probabilities,
             top_predictions=[
-                CoarseEmotionTopPrediction(
+                RemindCoarseEmotionTopPrediction(
                     emotion=label,
-                    label_id=COARSE_EMOTION_LABEL_TO_ID[label],
+                    label_id=REMIND_COARSE_EMOTION_LABEL_TO_ID[label],
                     probability=probability,
                 )
                 for label, probability in ordered[: self.settings.top_k]

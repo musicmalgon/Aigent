@@ -26,7 +26,7 @@ def _taxonomy_payload_check() -> str:
         "taxonomy_version = 'v1' "
         f"AND predicted_emotion IN {_V1_LABELS} "
         "AND emotion = predicted_emotion "
-        "AND provisional = 0 "
+        "AND provisional = FALSE "
         "AND margin IS NULL "
         "AND threshold_version IS NULL"
         ") OR ("
@@ -37,8 +37,8 @@ def _taxonomy_payload_check() -> str:
         "AND length(trim(threshold_version)) > 0 "
         "AND provisional = is_uncertain "
         "AND ("
-        "(provisional = 1 AND emotion IS NULL) "
-        "OR (provisional = 0 AND emotion = predicted_emotion)"
+        "(provisional = TRUE AND emotion IS NULL) "
+        "OR (provisional = FALSE AND emotion = predicted_emotion)"
         ")"
         ")"
     )
@@ -57,7 +57,7 @@ def _assert_downgrade_is_lossless() -> None:
                 "WHERE taxonomy_version <> 'v1' "
                 "OR emotion IS NULL "
                 "OR emotion <> predicted_emotion "
-                "OR provisional <> 0 "
+                "OR provisional <> FALSE "
                 "OR margin IS NOT NULL "
                 "OR threshold_version IS NOT NULL "
                 "LIMIT 1"
@@ -105,7 +105,7 @@ def upgrade() -> None:
             "UPDATE emotion_analysis_results "
             "SET taxonomy_version = 'v1', "
             "emotion = predicted_emotion, "
-            "provisional = 0"
+            "provisional = FALSE"
         )
     )
 

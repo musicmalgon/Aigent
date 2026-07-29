@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
 import json
 import logging
 import math
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
 import pytest
-
 from ai.src.emotion.base import (
     ModelLoadError,
     PredictionExecutionError,
@@ -53,12 +52,28 @@ def _write_tokenizer(directory: Path) -> None:
 def _separate_artifact(root: Path) -> Path:
     _write_model(root / "model")
     _write_tokenizer(root / "tokenizer")
-    (root / "label_mapping.json").write_text(
-        json.dumps({"coarse_labels": list(EXPECTED_LABEL2ID)}, ensure_ascii=False),
+    (root / "label_classes.json").write_text(
+        json.dumps(
+            {
+                "classes": list(EXPECTED_LABEL2ID),
+                "id2label": {
+                    str(index): label for index, label in EXPECTED_ID2LABEL.items()
+                },
+                "label2id": EXPECTED_LABEL2ID,
+                "label_set_version": "remind-coarse-v2",
+            },
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
     (root / "run_config.json").write_text(
-        json.dumps({"label_level": "coarse", "num_labels": 6}),
+        json.dumps(
+            {
+                "label_level": "coarse-v2",
+                "label_set_version": "remind-coarse-v2",
+                "num_labels": 6,
+            }
+        ),
         encoding="utf-8",
     )
     return root
@@ -68,14 +83,14 @@ class _FakeTensor:
     def __init__(self, rows: list[list[float]]) -> None:
         self.rows = rows
 
-    def to(self, device: object) -> "_FakeTensor":
+    def to(self, device: object) -> _FakeTensor:
         del device
         return self
 
-    def detach(self) -> "_FakeTensor":
+    def detach(self) -> _FakeTensor:
         return self
 
-    def cpu(self) -> "_FakeTensor":
+    def cpu(self) -> _FakeTensor:
         return self
 
     def tolist(self) -> list[list[float]]:
@@ -219,7 +234,7 @@ def test_explicit_model_and_tokenizer_directories_are_supported(tmp_path: Path) 
     "labels",
     [
         [f"E{index}" for index in range(10, 70)],
-        ["불안", "기쁨", "당황", "분노", "슬픔", "상처"],
+        ["기쁨", "불안", "당황", "분노", "슬픔", "무기력"],
     ],
 )
 def test_rejects_fine_or_misordered_model_metadata(
@@ -263,6 +278,17 @@ def test_predict_returns_six_probabilities_and_loads_only_once(
     assert all(len(response.probabilities) == 6 for response in responses)
     assert all(sum(response.probabilities.values()) == pytest.approx(1.0) for response in responses)
     assert all(response.predicted_label_id == 1 for response in responses)
+    assert all(response.threshold_version == "mvp-v1" for response in responses)
+    assert all(response.provisional for response in responses)
+    assert all(response.emotion is None for response in responses)
+    assert all(
+        response.margin
+        == pytest.approx(
+            response.top_predictions[0].probability
+            - response.top_predictions[1].probability
+        )
+        for response in responses
+    )
     assert all(
         response.top_predictions == sorted(
             response.top_predictions,
@@ -353,16 +379,20 @@ def test_load_rejects_blank_separator_and_training_length_mismatch(
         analyzer,
         "_import_dependencies",
         return_value=_dependencies(tokenizer, _FakeModel()),
-    ):
-        with pytest.raises(ModelLoadError, match="separator"):
-            analyzer.load()
+    ), pytest.raises(ModelLoadError, match="separator"):
+        analyzer.load()
 
     with pytest.raises(ValueError, match="training value 128"):
         CoarseEmotionSettings(artifact_dir=artifact, max_length=256)
 
     (artifact / "run_config.json").write_text(
         json.dumps(
-            {"label_level": "coarse", "num_labels": 6, "max_length": 256}
+            {
+                "label_level": "coarse-v2",
+                "label_set_version": "remind-coarse-v2",
+                "num_labels": 6,
+                "max_length": 256,
+            }
         ),
         encoding="utf-8",
     )
@@ -379,6 +409,7 @@ def test_settings_read_configurable_thresholds_and_paths() -> None:
             "EMOTION_MAX_LENGTH": "128",
             "EMOTION_CONFIDENCE_THRESHOLD": "0.40",
             "EMOTION_MARGIN_THRESHOLD": "0.08",
+            "EMOTION_THRESHOLD_VERSION": "synthetic-v3",
             "EMOTION_TOP_K": "3",
         }
     )
@@ -387,4 +418,10 @@ def test_settings_read_configurable_thresholds_and_paths() -> None:
     assert settings.device == "cpu"
     assert settings.confidence_threshold == 0.40
     assert settings.margin_threshold == 0.08
+    assert settings.threshold_version == "synthetic-v3"
     assert settings.top_k == 3
+
+    defaults = CoarseEmotionSettings()
+    assert defaults.confidence_threshold == 0.65
+    assert defaults.margin_threshold == 0.15
+    assert defaults.threshold_version == "mvp-v1"

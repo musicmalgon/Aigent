@@ -2,48 +2,52 @@
 
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
 from ai.src.api import create_app
 from ai.src.emotion.base import (
     ModelArtifactNotConfiguredError,
     PredictionExecutionError,
 )
 from ai.src.schemas import (
-    CoarseEmotionInferenceResponse,
     CoarseEmotionInput,
-    CoarseEmotionLabel,
-    CoarseEmotionTopPrediction,
+    RemindCoarseEmotionInferenceResponse,
+    RemindCoarseEmotionLabel,
+    RemindCoarseEmotionTopPrediction,
 )
+from fastapi.testclient import TestClient
 
 
-def _response() -> CoarseEmotionInferenceResponse:
+def _response() -> RemindCoarseEmotionInferenceResponse:
     probabilities = {
-        CoarseEmotionLabel.JOY: 0.03,
-        CoarseEmotionLabel.ANXIETY: 0.54,
-        CoarseEmotionLabel.EMBARRASSMENT: 0.14,
-        CoarseEmotionLabel.ANGER: 0.08,
-        CoarseEmotionLabel.SADNESS: 0.13,
-        CoarseEmotionLabel.HURT: 0.08,
+        RemindCoarseEmotionLabel.ANGER: 0.05,
+        RemindCoarseEmotionLabel.JOY: 0.03,
+        RemindCoarseEmotionLabel.ANXIETY: 0.70,
+        RemindCoarseEmotionLabel.EMBARRASSMENT: 0.10,
+        RemindCoarseEmotionLabel.SADNESS: 0.07,
+        RemindCoarseEmotionLabel.LETHARGY: 0.05,
     }
-    return CoarseEmotionInferenceResponse(
-        model_version="synthetic-coarse-v1",
-        predicted_emotion=CoarseEmotionLabel.ANXIETY,
-        predicted_label_id=1,
-        confidence=0.54,
+    return RemindCoarseEmotionInferenceResponse(
+        label_schema_version="remind-coarse-v2",
+        model_version="synthetic-coarse-v2",
+        threshold_version="mvp-v1",
+        predicted_emotion=RemindCoarseEmotionLabel.ANXIETY,
+        predicted_label_id=2,
+        emotion=RemindCoarseEmotionLabel.ANXIETY,
+        confidence=0.70,
+        margin=0.60,
+        provisional=False,
         is_uncertain=False,
         uncertainty_reason=None,
         probabilities=probabilities,
         top_predictions=[
-            CoarseEmotionTopPrediction(
-                emotion=CoarseEmotionLabel.ANXIETY,
-                label_id=1,
-                probability=0.54,
-            ),
-            CoarseEmotionTopPrediction(
-                emotion=CoarseEmotionLabel.EMBARRASSMENT,
+            RemindCoarseEmotionTopPrediction(
+                emotion=RemindCoarseEmotionLabel.ANXIETY,
                 label_id=2,
-                probability=0.14,
+                probability=0.70,
+            ),
+            RemindCoarseEmotionTopPrediction(
+                emotion=RemindCoarseEmotionLabel.EMBARRASSMENT,
+                label_id=3,
+                probability=0.10,
             ),
         ],
         latency_ms=1.5,
@@ -73,7 +77,9 @@ class _FakeService:
             raise self.load_error
         self.loaded = True
 
-    def predict(self, request: CoarseEmotionInput) -> CoarseEmotionInferenceResponse:
+    def predict(
+        self, request: CoarseEmotionInput
+    ) -> RemindCoarseEmotionInferenceResponse:
         del request
         self.predict_calls += 1
         if self.predict_error is not None:
@@ -87,11 +93,11 @@ def test_endpoint_success_and_model_is_loaded_once() -> None:
         assert client.get("/health/live").json() == {"status": "ok"}
         assert client.get("/health/ready").json() == {"status": "ready"}
         response = client.post(
-            "/v1/emotions/classify",
+            "/v2/emotions/classify",
             json={"hs01": "합성 첫 문장", "hs02": "합성 두 번째 문장", "hs03": None},
         )
         second = client.post(
-            "/v1/emotions/classify",
+            "/v2/emotions/classify",
             json={"hs01": "다른 첫 문장", "hs02": "다른 두 번째 문장"},
         )
 
@@ -99,6 +105,12 @@ def test_endpoint_success_and_model_is_loaded_once() -> None:
     assert second.status_code == 200
     payload = response.json()
     assert payload["predicted_emotion"] == "불안"
+    assert payload["predicted_label_id"] == 2
+    assert payload["emotion"] == "불안"
+    assert payload["provisional"] is False
+    assert payload["margin"] == 0.6
+    assert payload["label_schema_version"] == "remind-coarse-v2"
+    assert payload["threshold_version"] == "mvp-v1"
     assert len(payload["probabilities"]) == 6
     assert sum(payload["probabilities"].values()) == 1.0
     assert service.load_calls == 1
@@ -113,7 +125,7 @@ def test_missing_model_keeps_liveness_but_fails_readiness() -> None:
         assert client.get("/health/live").status_code == 200
         readiness = client.get("/health/ready")
         inference = client.post(
-            "/v1/emotions/classify",
+            "/v2/emotions/classify",
             json={"hs01": "합성 첫 문장", "hs02": "합성 두 번째 문장"},
         )
     assert readiness.status_code == 503
@@ -127,11 +139,11 @@ def test_inference_error_is_generic_and_empty_input_is_rejected() -> None:
     )
     with TestClient(create_app(analyzer=service)) as client:
         failure = client.post(
-            "/v1/emotions/classify",
+            "/v2/emotions/classify",
             json={"hs01": "합성 첫 문장", "hs02": "합성 두 번째 문장"},
         )
         invalid = client.post(
-            "/v1/emotions/classify",
+            "/v2/emotions/classify",
             json={"hs01": " ", "hs02": "합성 두 번째 문장"},
         )
     assert failure.status_code == 500

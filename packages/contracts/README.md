@@ -12,6 +12,16 @@ Six-class model inference uses two additive contracts:
 - `coarse_emotion_inference_request.schema.json`
 - `coarse_emotion_inference_response.schema.json`
 
+The independently versioned Re:Mind v2 taxonomy uses:
+
+- `remind_coarse_emotion_inference_request.schema.json`
+- `remind_coarse_emotion_inference_response.schema.json`
+
+Its fixed model-index order is `분노`, `기쁨`, `불안`, `당황`, `슬픔`,
+`무기력`, and every response includes
+`label_schema_version=remind-coarse-v2`. The v1 contracts below remain frozen
+for existing persistence history.
+
 The six coarse labels have a fixed model-index order:
 
 1. `기쁨`

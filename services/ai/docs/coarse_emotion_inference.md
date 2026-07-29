@@ -2,21 +2,21 @@
 
 ## Scope
 
-This service exposes the validated AI Hub coarse-emotion Transformer as a
-separate inference boundary. It does not replace the existing four-label
-`EmotionAnalysis` schema or its adapters. The output is a model estimate, not a
-medical diagnosis or treatment recommendation.
+This service exposes the selected Re:Mind v2 Transformer as a separate,
+versioned inference boundary. It does not rewrite the existing v1 `상처`
+history or the four-label `EmotionAnalysis` schema. The output is a model
+estimate, not a medical diagnosis or treatment recommendation.
 
 Fixed model-index order:
 
 | id | label |
 |---:|---|
-| 0 | 기쁨 |
-| 1 | 불안 |
-| 2 | 당황 |
-| 3 | 분노 |
+| 0 | 분노 |
+| 1 | 기쁨 |
+| 2 | 불안 |
+| 3 | 당황 |
 | 4 | 슬픔 |
-| 5 | 상처 |
+| 5 | 무기력 |
 
 ## Validated Baseline
 
@@ -40,14 +40,14 @@ Model files are not committed. Configure one of these local layouts:
 artifact-root/
   model/                 # config.json and model weights
   tokenizer/             # tokenizer files
-  label_mapping.json
-  run_config.json        # optional extra validation metadata
+  label_classes.json     # v2 ordered classes and label/id maps
+  run_config.json        # v2 experiment metadata
 ```
 
 ```text
 artifact-root/
   checkpoints/best/      # combined model and tokenizer
-  label_mapping.json
+  label_classes.json
 ```
 
 Explicit model and tokenizer directories are also supported. Startup rejects
@@ -61,14 +61,18 @@ Copy values from `.env.example` into the process environment. Important keys:
 
 - `EMOTION_ARTIFACT_DIR`: artifact root for automatic layout discovery
 - `EMOTION_MODEL_DIR`, `EMOTION_TOKENIZER_DIR`: explicit path overrides
-- `EMOTION_LABEL_MAPPING_PATH`: explicit metadata override
+- `EMOTION_LABEL_MAPPING_PATH`: optional legacy explicit metadata override;
+  normal v2 artifact discovery uses `label_classes.json`
 - `EMOTION_DEVICE`: `auto`, `cpu`, `cuda`, or `mps`
 - `EMOTION_MAX_LENGTH`: fixed to the training value `128`; any other value fails
   startup validation
-- `EMOTION_CONFIDENCE_THRESHOLD`: defaults to `0.45`
-- `EMOTION_MARGIN_THRESHOLD`: defaults to `0.10`
+- `EMOTION_CONFIDENCE_THRESHOLD`: MVP abstention threshold, defaults to `0.65`
+- `EMOTION_MARGIN_THRESHOLD`: top-one/top-two margin threshold, defaults to
+  `0.15`
+- `EMOTION_THRESHOLD_VERSION`: provenance for the applied abstention policy,
+  defaults to `mvp-v1`
 - `EMOTION_MODEL_VERSION`: response/log version, defaults to
-  `klue-roberta-coarse-v1`
+  `klue-roberta-remind-coarse-v2`
 - `EMOTION_TOP_K`: ranked predictions returned, defaults to `2`
 
 `auto` prefers CUDA, then MPS, then CPU. An explicitly requested unavailable
@@ -107,7 +111,7 @@ Endpoints:
 
 - `GET /health/live`: process liveness
 - `GET /health/ready`: model/tokenizer readiness, `503` until loaded
-- `POST /v1/emotions/classify`: one three-turn conversation
+- `POST /v2/emotions/classify`: one three-turn conversation
 
 Example request:
 
@@ -115,13 +119,18 @@ Example request:
 {"hs01":"오늘 프로젝트를 마쳤어.","hs02":"후련하고 기분이 좋아.","hs03":null}
 ```
 
-The response includes the predicted label/id, all six probabilities, ranked
-top predictions, confidence, uncertainty reason, model version, and latency.
+The response preserves the raw `predicted_emotion` and label id, and separately
+returns nullable `emotion` for product use. `emotion` is null and
+`provisional=true` unless both configured thresholds pass. It also includes
+the top-one/top-two `margin`, `threshold_version`, all six probabilities,
+ranked top predictions, model version, and latency.
 Probabilities are normalized and keyed by the fixed labels above.
 
-`is_uncertain` is true when confidence is below the configured threshold,
-the top-two probability margin is below its threshold, or both. It communicates
-model ambiguity; downstream code must not reinterpret it as a diagnosis.
+`is_uncertain` and `provisional` are true when confidence is below the
+configured threshold, the top-two probability margin is below its threshold,
+or both. Downstream Risk evaluation must ignore the emotion signal when
+`emotion` is null; it must not convert the raw prediction into an accepted
+emotion.
 
 The model and tokenizer load once during application lifespan. Inference is
 serialized for thread safety, batches are supported by the analyzer, and CUDA

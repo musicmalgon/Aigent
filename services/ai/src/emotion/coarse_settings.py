@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
-import os
 from pathlib import Path
-
 
 TRAINING_MAX_LENGTH = 128
 
@@ -56,9 +55,10 @@ class CoarseEmotionSettings:
     label_mapping_path: Path | None = None
     device: str = "auto"
     max_length: int = TRAINING_MAX_LENGTH
-    confidence_threshold: float = 0.45
-    margin_threshold: float = 0.10
-    model_version: str = "klue-roberta-coarse-v1"
+    confidence_threshold: float = 0.65
+    margin_threshold: float = 0.15
+    threshold_version: str = "mvp-v1"
+    model_version: str = "klue-roberta-remind-coarse-v2"
     top_k: int = 2
 
     def __post_init__(self) -> None:
@@ -71,6 +71,8 @@ class CoarseEmotionSettings:
             raise ValueError("confidence_threshold must be between 0 and 1")
         if not 0.0 <= self.margin_threshold <= 1.0:
             raise ValueError("margin_threshold must be between 0 and 1")
+        if not self.threshold_version.strip():
+            raise ValueError("threshold_version must not be empty")
         if not 1 <= self.top_k <= 6:
             raise ValueError("top_k must be between 1 and 6")
         if not self.model_version.strip():
@@ -79,13 +81,18 @@ class CoarseEmotionSettings:
     @classmethod
     def from_env(
         cls, environment: Mapping[str, str] | None = None
-    ) -> "CoarseEmotionSettings":
+    ) -> CoarseEmotionSettings:
         values = os.environ if environment is None else environment
         model_version = values.get(
-            "EMOTION_MODEL_VERSION", "klue-roberta-coarse-v1"
+            "EMOTION_MODEL_VERSION", "klue-roberta-remind-coarse-v2"
         ).strip()
         if not model_version:
             raise ValueError("EMOTION_MODEL_VERSION must not be empty")
+        threshold_version = values.get(
+            "EMOTION_THRESHOLD_VERSION", "mvp-v1"
+        ).strip()
+        if not threshold_version:
+            raise ValueError("EMOTION_THRESHOLD_VERSION must not be empty")
         device = values.get("EMOTION_DEVICE", "auto").strip().casefold()
         if device not in {"auto", "cpu", "cuda", "mps"}:
             raise ValueError("EMOTION_DEVICE must be auto, cpu, cuda, or mps")
@@ -105,11 +112,12 @@ class CoarseEmotionSettings:
                 maximum=4096,
             ),
             confidence_threshold=_bounded_float(
-                values, "EMOTION_CONFIDENCE_THRESHOLD", 0.45
+                values, "EMOTION_CONFIDENCE_THRESHOLD", 0.65
             ),
             margin_threshold=_bounded_float(
-                values, "EMOTION_MARGIN_THRESHOLD", 0.10
+                values, "EMOTION_MARGIN_THRESHOLD", 0.15
             ),
+            threshold_version=threshold_version,
             model_version=model_version,
             top_k=_bounded_int(
                 values,
@@ -121,4 +129,4 @@ class CoarseEmotionSettings:
         )
 
 
-__all__ = ["CoarseEmotionSettings", "TRAINING_MAX_LENGTH"]
+__all__ = ["TRAINING_MAX_LENGTH", "CoarseEmotionSettings"]

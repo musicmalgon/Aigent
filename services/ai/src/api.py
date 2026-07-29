@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
 from typing import Any, Protocol
 
 from fastapi import FastAPI, HTTPException, status
@@ -11,8 +11,7 @@ from fastapi.responses import JSONResponse
 
 from .emotion import CoarseEmotionSettings, CoarseTransformerEmotionAnalyzer
 from .emotion.base import ModelNotReadyError, PredictionError
-from .schemas import CoarseEmotionInferenceResponse, CoarseEmotionInput
-
+from .schemas import CoarseEmotionInput, RemindCoarseEmotionInferenceResponse
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +22,9 @@ class CoarseEmotionService(Protocol):
 
     def load(self) -> None: ...
 
-    def predict(self, request: CoarseEmotionInput) -> CoarseEmotionInferenceResponse: ...
+    def predict(
+        self, request: CoarseEmotionInput
+    ) -> RemindCoarseEmotionInferenceResponse: ...
 
 
 def create_app(
@@ -78,12 +79,12 @@ def create_app(
         )
 
     @app.post(
-        "/v1/emotions/classify",
-        response_model=CoarseEmotionInferenceResponse,
+        "/v2/emotions/classify",
+        response_model=RemindCoarseEmotionInferenceResponse,
         tags=["emotions"],
         summary="Classify up to three user utterances into six coarse emotions",
     )
-    def classify(request: CoarseEmotionInput) -> CoarseEmotionInferenceResponse:
+    def classify(request: CoarseEmotionInput) -> RemindCoarseEmotionInferenceResponse:
         if not service.is_loaded:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import ai.src.remind_ai.data.group_split as group_split_module
-import pytest
 from typing import cast
 
+import ai.src.remind_ai.data.group_split as group_split_module
+import pytest
 from ai.src.remind_ai.data.emotion_dataset import EmotionSample
 from ai.src.remind_ai.data.group_split import (
     GroupSplitError,
@@ -150,3 +150,57 @@ def test_too_few_groups_fails_safely() -> None:
     samples = _samples()[:4]
     with pytest.raises(GroupSplitError):
         select_group_safe_split(samples)
+
+
+def test_strict_split_requires_every_class_in_validation_and_test() -> None:
+    labels = ("분노", "기쁨", "불안", "당황", "슬픔", "무기력")
+    samples = [
+        EmotionSample(
+            text=f"UNIQUE SYNTHETIC {profile} {label_index}",
+            label=label,
+            sample_id=f"TALK-{profile}-{label_index}",
+            group_id=f"PROFILE-{profile}",
+            official_split="synthetic",
+        )
+        for profile in range(6)
+        for label_index, label in enumerate(labels)
+    ]
+    split = select_group_safe_split(
+        samples,
+        random_state=42,
+        candidate_count=20,
+        require_evaluation_class_coverage=True,
+        require_normalized_text_isolation=True,
+    )
+    for name in ("train", "validation", "test"):
+        assert {sample.label for sample in split.samples_for(samples, name)} == set(
+            labels
+        )
+
+
+def test_strict_split_rejects_class_with_fewer_than_three_profiles() -> None:
+    samples = [
+        EmotionSample(
+            text=f"UNIQUE A {profile}",
+            label="A",
+            sample_id=f"A-{profile}",
+            group_id=f"PROFILE-{profile}",
+            official_split="synthetic",
+        )
+        for profile in range(4)
+    ]
+    samples.extend(
+        EmotionSample(
+            text=f"UNIQUE B {profile}",
+            label="B",
+            sample_id=f"B-{profile}",
+            group_id=f"PROFILE-{profile}",
+            official_split="synthetic",
+        )
+        for profile in range(2)
+    )
+    with pytest.raises(GroupSplitError, match="three profile groups"):
+        select_group_safe_split(
+            samples,
+            require_evaluation_class_coverage=True,
+        )

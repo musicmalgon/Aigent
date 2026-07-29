@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "remind_coarse_emotion_inference_request.schema.json",
+  "title": "RemindCoarseEmotionInput",
+  "description": "Re:Mind v2 감정 분류에 사용할 최대 세 개의 사용자 발화.",
+  "$comment": "hs01과 hs02는 학습 입력과 동일하게 필수이며 hs03은 선택 사항이다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "hs01",
+    "hs02"
+  ],
+  "properties": {
+    "hs01": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
+    "hs02": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000,
+      "pattern": "\\S"
+    },
+    "hs03": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "\\S"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "examples": [
+    {
+      "hs01": "해야 할 일이 있는데 시작할 힘이 없어.",
+      "hs02": "오늘은 계속 누워만 있고 싶어.",
+      "hs03": null
+    }
+  ]
+}

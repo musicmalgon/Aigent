@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from contextlib import nullcontext
-from dataclasses import dataclass
 import json
 import math
-from pathlib import Path
 import random
 import shutil
 import tempfile
 import time
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import nullcontext
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ..data.transformer_dataset import LabelEncoding
@@ -46,6 +46,8 @@ class TrainingConfig:
     progress_update_interval: int = 1
     show_gpu_memory: bool = False
     log_every_n_steps: int = 0
+    class_weights: tuple[float, ...] | None = None
+    checkpoint_provenance: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,29 @@ class TrainingResult:
     stopped_early: bool
     optimizer_step_count: int
     total_elapsed_seconds: float
+
+
+def _normalize_checkpoint_provenance(
+    provenance: Mapping[str, object] | None,
+) -> dict[str, object] | None:
+    if provenance is None:
+        return None
+    try:
+        encoded = json.dumps(
+            dict(provenance),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        decoded = json.loads(encoded)
+    except (TypeError, ValueError) as exc:
+        raise TransformerTrainingError(
+            "checkpoint provenance must be finite JSON data"
+        ) from exc
+    if not isinstance(decoded, dict):
+        raise TransformerTrainingError("checkpoint provenance must be an object")
+    return decoded
 
 
 def seed_everything(torch: Any, random_state: int) -> None:
@@ -81,9 +106,10 @@ def make_dataloader(
     batch_size: int,
     shuffle: bool,
     num_workers: int,
+    random_state: int = 42,
 ) -> Any:
     generator = torch.Generator()
-    generator.manual_seed(42)
+    generator.manual_seed(random_state)
     return torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size,
@@ -92,6 +118,80 @@ def make_dataloader(
         collate_fn=collator,
         generator=generator,
     )
+
+
+def _synchronize_device(torch: Any, device: Any) -> None:
+    device_type = getattr(device, "type", str(device))
+    if device_type == "cuda":
+        torch.cuda.synchronize()
+    elif device_type == "mps":
+        mps = getattr(torch, "mps", None)
+        synchronize = getattr(mps, "synchronize", None)
+        if callable(synchronize):
+            synchronize()
+
+
+def _percentile(values: Sequence[float], fraction: float) -> float:
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, int((len(ordered) - 1) * fraction)))
+    return ordered[index]
+
+
+def benchmark_inference(
+    *,
+    torch: Any,
+    model: Any,
+    batch_factory: Callable[[], Mapping[str, Any]],
+    device: Any,
+    effective_batch_size: int,
+    warmup_runs: int,
+    measured_runs: int,
+    fp16: bool = False,
+) -> dict[str, object]:
+    """Measure tokenization/collation, transfer, and forward latency safely."""
+
+    if effective_batch_size < 1 or warmup_runs < 0 or measured_runs < 1:
+        raise TransformerTrainingError(
+            "the inference benchmark configuration is invalid"
+        )
+
+    def predict_once() -> None:
+        batch = batch_factory()
+        if not isinstance(batch, Mapping):
+            raise TransformerTrainingError("the inference benchmark batch is invalid")
+        moved = _to_device(batch, device)
+        moved.pop("labels", None)
+        precision_context = (
+            torch.autocast(device_type="cuda", dtype=torch.float16)
+            if fp16
+            else nullcontext()
+        )
+        with precision_context:
+            model(**moved)
+
+    model.eval()
+    with torch.no_grad():
+        for _ in range(warmup_runs):
+            predict_once()
+        _synchronize_device(torch, device)
+        timings_ms: list[float] = []
+        for _ in range(measured_runs):
+            started = time.perf_counter()
+            predict_once()
+            _synchronize_device(torch, device)
+            timings_ms.append((time.perf_counter() - started) * 1_000)
+    total_seconds = sum(timings_ms) / 1_000
+    return {
+        "effective_batch_size": effective_batch_size,
+        "warmup_runs": warmup_runs,
+        "measured_runs": measured_runs,
+        "p50_latency_ms": round(_percentile(timings_ms, 0.50), 6),
+        "p95_latency_ms": round(_percentile(timings_ms, 0.95), 6),
+        "samples_per_second": round(
+            effective_batch_size * measured_runs / max(total_seconds, 1e-12), 3
+        ),
+        "fp16_enabled": fp16,
+    }
 
 
 def _to_device(batch: Mapping[str, Any], device: Any) -> dict[str, Any]:
@@ -135,8 +235,12 @@ def evaluate_with_predictions(
             loss_value = float(loss.detach().cpu().item())
             running_loss += loss_value * batch_size
             processed_samples += batch_size
-            expected.extend(int(value) for value in label_values.detach().cpu().tolist())
-            predicted.extend(int(value) for value in predictions.detach().cpu().tolist())
+            expected.extend(
+                int(value) for value in label_values.detach().cpu().tolist()
+            )
+            predicted.extend(
+                int(value) for value in predictions.detach().cpu().tolist()
+            )
             reporter.update_postfix(
                 bar,
                 batch_index,
@@ -150,7 +254,9 @@ def evaluate_with_predictions(
     return metrics, expected, predicted
 
 
-def predict_ids(torch: Any, model: Any, loader: Any, device: Any) -> tuple[list[int], list[int]]:
+def predict_ids(
+    torch: Any, model: Any, loader: Any, device: Any
+) -> tuple[list[int], list[int]]:
     """Run batched no-grad prediction and return class IDs only in memory."""
 
     expected: list[int] = []
@@ -162,8 +268,12 @@ def predict_ids(torch: Any, model: Any, loader: Any, device: Any) -> tuple[list[
             label_values = moved.pop("labels")
             outputs = model(**moved)
             predictions = outputs.logits.argmax(dim=-1)
-            expected.extend(int(value) for value in label_values.detach().cpu().tolist())
-            predicted.extend(int(value) for value in predictions.detach().cpu().tolist())
+            expected.extend(
+                int(value) for value in label_values.detach().cpu().tolist()
+            )
+            predicted.extend(
+                int(value) for value in predictions.detach().cpu().tolist()
+            )
     return expected, predicted
 
 
@@ -202,7 +312,9 @@ def _save_checkpoint(
     """Replace a checkpoint directory only after both artifacts save successfully."""
 
     directory.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=".transformer-checkpoint-", dir=directory.parent))
+    temporary = Path(
+        tempfile.mkdtemp(prefix=".transformer-checkpoint-", dir=directory.parent)
+    )
     backup = directory.parent / f".{directory.name}.previous"
     existing_moved = False
     try:
@@ -216,7 +328,11 @@ def _save_checkpoint(
         except TypeError:  # synthetic stubs and older compatible transformers
             model.save_pretrained(temporary)
         tokenizer.save_pretrained(temporary)
-        if optimizer is not None and scheduler is not None and trainer_state is not None:
+        if (
+            optimizer is not None
+            and scheduler is not None
+            and trainer_state is not None
+        ):
             torch.save(
                 {
                     "optimizer": optimizer.state_dict(),
@@ -245,7 +361,9 @@ def _save_checkpoint(
             backup.replace(directory)
         if isinstance(exc, KeyboardInterrupt):
             raise
-        raise TransformerTrainingError("a training checkpoint could not be saved") from exc
+        raise TransformerTrainingError(
+            "a training checkpoint could not be saved"
+        ) from exc
 
 
 def fit(
@@ -270,6 +388,31 @@ def fit(
         or config.log_every_n_steps < 0
     ):
         raise TransformerTrainingError("training counts must be positive")
+    if (
+        not math.isfinite(config.learning_rate)
+        or config.learning_rate <= 0
+        or not math.isfinite(config.weight_decay)
+        or config.weight_decay < 0
+        or not math.isfinite(config.warmup_ratio)
+        or not 0 <= config.warmup_ratio <= 1
+        or not math.isfinite(config.max_grad_norm)
+        or config.max_grad_norm <= 0
+    ):
+        raise TransformerTrainingError(
+            "training hyperparameters must be finite and in range"
+        )
+    if config.class_weights is not None and (
+        len(config.class_weights) != len(labels.classes)
+        or any(not math.isfinite(value) or value <= 0 for value in config.class_weights)
+    ):
+        raise TransformerTrainingError(
+            "class weights must match the positive finite label vocabulary"
+        )
+    checkpoint_provenance = _normalize_checkpoint_provenance(
+        config.checkpoint_provenance
+    )
+    if resume_from_checkpoint is not None and checkpoint_provenance is None:
+        raise TransformerTrainingError("resume requires explicit checkpoint provenance")
     reporter = ProgressReporter(
         ProgressConfig(
             enabled=config.progress_bar,
@@ -280,6 +423,11 @@ def fit(
     fit_started = time.perf_counter()
     seed_everything(torch, config.random_state)
     model.to(device)
+    class_weight_tensor = (
+        torch.tensor(config.class_weights, dtype=torch.float32, device=device)
+        if config.class_weights is not None
+        else None
+    )
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
     )
@@ -332,7 +480,9 @@ def fit(
             if not isinstance(state_payload, Mapping) or not isinstance(
                 optimizer_payload, Mapping
             ):
-                raise ValueError
+                raise TypeError
+            if state_payload.get("checkpoint_provenance") != checkpoint_provenance:
+                raise TypeError
             optimizer.load_state_dict(optimizer_payload["optimizer"])
             scheduler.load_state_dict(optimizer_payload["scheduler"])
             completed_epoch_value = state_payload["completed_epoch"]
@@ -359,9 +509,35 @@ def fit(
             epochs_without_improvement = int(epochs_without_value)
             loaded_history = state_payload.get("history", [])
             if not isinstance(loaded_history, list):
-                raise ValueError
+                raise TypeError
+            expected_class_weights = (
+                list(config.class_weights) if config.class_weights is not None else None
+            )
+            if state_payload.get("class_weights") != expected_class_weights:
+                raise TypeError
             history = [item for item in loaded_history if isinstance(item, Mapping)]
-            best_load_directory = resume_from_checkpoint
+            if best_epoch > 0:
+                previous_best = (
+                    resume_from_checkpoint
+                    if resume_from_checkpoint.name == "best"
+                    else resume_from_checkpoint.parent / "best"
+                )
+                previous_best_state = json.loads(
+                    (previous_best / "trainer_state.json").read_text(encoding="utf-8")
+                )
+                if (
+                    not isinstance(previous_best_state, Mapping)
+                    or previous_best_state.get("completed_epoch") != best_epoch
+                    or previous_best_state.get("best_epoch") != best_epoch
+                    or previous_best_state.get("best_validation_macro_f1") != best_score
+                    or previous_best_state.get("class_weights")
+                    != expected_class_weights
+                    or previous_best_state.get("checkpoint_provenance")
+                    != checkpoint_provenance
+                    or not (previous_best / "pytorch_model.bin").is_file()
+                ):
+                    raise TypeError
+                best_load_directory = previous_best
         except Exception as exc:
             raise TransformerTrainingError(
                 "the resume checkpoint does not contain valid trainer state"
@@ -393,13 +569,36 @@ def fit(
                     else nullcontext()
                 )
                 with precision_context:
-                    outputs = model(**moved)
-                    loss = outputs.loss / config.gradient_accumulation_steps
+                    if class_weight_tensor is None:
+                        outputs = model(**moved)
+                        raw_loss = getattr(outputs, "loss", None)
+                        if raw_loss is None:
+                            raise TransformerTrainingError(
+                                "training loss is unavailable"
+                            )
+                    else:
+                        label_values = moved.pop("labels", None)
+                        if label_values is None:
+                            raise TransformerTrainingError(
+                                "a training batch is missing labels"
+                            )
+                        outputs = model(**moved)
+                        logits = getattr(outputs, "logits", None)
+                        if logits is None:
+                            raise TransformerTrainingError(
+                                "training logits are unavailable"
+                            )
+                        raw_loss = torch.nn.functional.cross_entropy(
+                            logits,
+                            label_values,
+                            weight=class_weight_tensor,
+                        )
+                    loss = raw_loss / config.gradient_accumulation_steps
                 if scaler is not None:
                     scaler.scale(loss).backward()
                 else:
                     loss.backward()
-                current_loss = float(outputs.loss.detach().cpu().item())
+                current_loss = float(raw_loss.detach().cpu().item())
                 running_loss += current_loss
                 batch_count += 1
                 should_step = (
@@ -409,7 +608,9 @@ def fit(
                 if should_step:
                     if scaler is not None:
                         scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), config.max_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(), config.max_grad_norm
+                    )
                     if scaler is not None:
                         scaler.step(optimizer)
                         scaler.update()
@@ -508,6 +709,12 @@ def fit(
                 "optimizer_step_count": optimizer_steps,
                 "epochs_without_improvement": epochs_without_improvement,
                 "history": history,
+                "class_weights": (
+                    list(config.class_weights)
+                    if config.class_weights is not None
+                    else None
+                ),
+                "checkpoint_provenance": checkpoint_provenance,
             }
             _save_checkpoint(
                 model,
@@ -562,6 +769,12 @@ def fit(
                 "optimizer_step_count": optimizer_steps,
                 "epochs_without_improvement": epochs_without_improvement,
                 "history": history,
+                "class_weights": (
+                    list(config.class_weights)
+                    if config.class_weights is not None
+                    else None
+                ),
+                "checkpoint_provenance": checkpoint_provenance,
             },
         )
         raise TransformerTrainingError(
@@ -589,7 +802,9 @@ def fit(
         model.load_state_dict(best_state)
         model.to(device)
     except Exception as exc:
-        raise TransformerTrainingError("the best checkpoint could not be reloaded") from exc
+        raise TransformerTrainingError(
+            "the best checkpoint could not be reloaded"
+        ) from exc
     return TrainingResult(
         best_epoch=best_epoch,
         best_validation_macro_f1=best_score,
@@ -609,4 +824,6 @@ def evaluation_already_completed(state_path: Path) -> bool:
         payload = json.loads(state_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         raise TransformerTrainingError("the evaluation state file is invalid")
-    return bool(isinstance(payload, Mapping) and payload.get("final_evaluation_completed"))
+    return bool(
+        isinstance(payload, Mapping) and payload.get("final_evaluation_completed")
+    )

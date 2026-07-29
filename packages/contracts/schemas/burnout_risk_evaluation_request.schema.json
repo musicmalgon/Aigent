@@ -57,8 +57,7 @@
         "불안",
         "당황",
         "분노",
-        "슬픔",
-        "상처"
+        "슬픔"
       ],
       "properties": {
         "기쁨": {
@@ -78,8 +77,19 @@
         },
         "상처": {
           "$ref": "#/$defs/probability"
+        },
+        "무기력": {
+          "$ref": "#/$defs/probability"
         }
-      }
+      },
+      "oneOf": [
+        {
+          "required": ["상처"]
+        },
+        {
+          "required": ["무기력"]
+        }
+      ]
     },
     "currentRiskSignals": {
       "type": "object",

@@ -66,9 +66,19 @@ def build_risk_request(
                 "daily record contract date must match the persisted record"
             )
 
+    emotion_is_usable = emotion_result is not None
+    if emotion_result is not None:
+        if emotion_result.taxonomy_version not in {"v1", "v2"}:
+            raise ValueError("emotion result taxonomy is unsupported")
+        if emotion_result.taxonomy_version == "v2":
+            emotion_is_usable = (
+                emotion_result.emotion is not None
+                and not emotion_result.provisional
+            )
+
     emotion_probabilities = (
         EmotionProbabilities.model_validate(emotion_result.probabilities)
-        if emotion_result is not None
+        if emotion_result is not None and emotion_is_usable
         else None
     )
     sleep_minutes = (
@@ -112,12 +122,12 @@ def build_risk_request(
         emotion_probabilities=emotion_probabilities,
         emotion_confidence=(
             emotion_result.confidence
-            if emotion_result is not None
+            if emotion_result is not None and emotion_is_usable
             else None
         ),
         emotion_uncertain=(
             emotion_result.is_uncertain
-            if emotion_result is not None
+            if emotion_result is not None and emotion_is_usable
             else None
         ),
     )

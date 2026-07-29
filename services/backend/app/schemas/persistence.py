@@ -34,6 +34,23 @@ class EmotionLabel(StrEnum):
     HURT = "상처"
 
 
+class EmotionV2Label(StrEnum):
+    ANGER = "분노"
+    JOY = "기쁨"
+    ANXIETY = "불안"
+    EMBARRASSMENT = "당황"
+    SADNESS = "슬픔"
+    LETHARGY = "무기력"
+
+
+class EmotionTaxonomyVersion(StrEnum):
+    V1 = "v1"
+    V2 = "v2"
+
+
+EmotionAnyLabel = EmotionLabel | EmotionV2Label
+
+
 class PersistenceSchema(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -86,19 +103,87 @@ class DailyRecordPersistenceCreate(PersistenceSchema):
 class EmotionResultCreate(PersistenceSchema):
     record_date: date | None = None
     analyzed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    taxonomy_version: EmotionTaxonomyVersion = EmotionTaxonomyVersion.V1
     model_version: Annotated[str, Field(min_length=1, max_length=128)]
-    predicted_emotion: EmotionLabel
+    predicted_emotion: EmotionAnyLabel
+    emotion: EmotionAnyLabel | None = None
     confidence: Probability
     is_uncertain: bool
-    probabilities: dict[EmotionLabel, Probability]
+    probabilities: dict[EmotionAnyLabel, Probability]
+    margin: Probability | None = None
+    provisional: bool = False
+    threshold_version: Annotated[str, Field(min_length=1, max_length=64)] | None = (
+        None
+    )
     input_hash: Annotated[str, Field(min_length=1, max_length=128)] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def preserve_v1_defaults(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        taxonomy = normalized.get(
+            "taxonomy_version",
+            EmotionTaxonomyVersion.V1,
+        )
+        label_type = (
+            EmotionV2Label
+            if taxonomy in {EmotionTaxonomyVersion.V2, "v2"}
+            else EmotionLabel
+        )
+        if "predicted_emotion" in normalized:
+            normalized["predicted_emotion"] = label_type(
+                normalized["predicted_emotion"]
+            )
+        if normalized.get("emotion") is not None:
+            normalized["emotion"] = label_type(normalized["emotion"])
+        if isinstance(normalized.get("probabilities"), dict):
+            normalized["probabilities"] = {
+                label_type(label): probability
+                for label, probability in normalized["probabilities"].items()
+            }
+        if (
+            taxonomy in {EmotionTaxonomyVersion.V1, "v1"}
+            and "emotion" not in normalized
+            and "predicted_emotion" in normalized
+        ):
+            normalized["emotion"] = normalized["predicted_emotion"]
+        return normalized
 
     @model_validator(mode="after")
     def validate_emotion_result(self) -> EmotionResultCreate:
         if self.analyzed_at.tzinfo is None or self.analyzed_at.utcoffset() is None:
             raise ValueError("analyzed_at must include a timezone")
-        if set(self.probabilities) != set(EmotionLabel):
-            raise ValueError("probabilities must contain exactly six emotion labels")
+        expected_labels: set[EmotionAnyLabel]
+        if self.taxonomy_version is EmotionTaxonomyVersion.V1:
+            expected_labels = set(EmotionLabel)
+            if not isinstance(self.predicted_emotion, EmotionLabel):
+                raise ValueError("v1 predicted_emotion must use a v1 label")
+            if self.emotion is not self.predicted_emotion:
+                raise ValueError("v1 emotion must match predicted_emotion")
+            if self.margin is not None or self.threshold_version is not None:
+                raise ValueError("v1 rows cannot contain v2 threshold provenance")
+            if self.provisional:
+                raise ValueError("v1 rows cannot use v2 abstention")
+        else:
+            expected_labels = set(EmotionV2Label)
+            if not isinstance(self.predicted_emotion, EmotionV2Label):
+                raise ValueError("v2 predicted_emotion must use a v2 label")
+            if self.margin is None or self.threshold_version is None:
+                raise ValueError("v2 rows require margin and threshold_version")
+            if self.provisional != self.is_uncertain:
+                raise ValueError("v2 provisional must match is_uncertain")
+            expected_emotion = None if self.provisional else self.predicted_emotion
+            if self.emotion is not expected_emotion:
+                raise ValueError(
+                    "v2 emotion must be null exactly when provisional"
+                )
+
+        if set(self.probabilities) != expected_labels:
+            raise ValueError(
+                "probabilities must match the selected taxonomy labels"
+            )
         if abs(sum(self.probabilities.values()) - 1.0) > 1e-6:
             raise ValueError("emotion probabilities must sum to 1 within 0.000001")
         return self
@@ -152,8 +237,11 @@ class RiskEvaluationRead(PersistenceSchema):
 __all__ = [
     "BaselineRead",
     "DailyRecordPersistenceCreate",
+    "EmotionAnyLabel",
     "EmotionLabel",
     "EmotionResultCreate",
     "EmotionResultRead",
+    "EmotionTaxonomyVersion",
+    "EmotionV2Label",
     "RiskEvaluationRead",
 ]

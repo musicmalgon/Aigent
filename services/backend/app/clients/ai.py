@@ -31,7 +31,7 @@ from app.core.config import Settings
 
 LOGGER = logging.getLogger(__name__)
 
-CLASSIFY_ENDPOINT = "v1/emotions/classify"
+CLASSIFY_ENDPOINT = "v2/emotions/classify"
 LIVENESS_ENDPOINT = "health/live"
 READINESS_ENDPOINT = "health/ready"
 
@@ -57,12 +57,12 @@ class _WireModel(BaseModel):
 
 
 class CoarseEmotionLabel(StrEnum):
+    ANGER = "분노"
     JOY = "기쁨"
     ANXIETY = "불안"
     EMBARRASSMENT = "당황"
-    ANGER = "분노"
     SADNESS = "슬픔"
-    HURT = "상처"
+    LETHARGY = "무기력"
 
 
 COARSE_EMOTION_LABELS = tuple(CoarseEmotionLabel)
@@ -91,7 +91,7 @@ def _normalize_utterance(value: object, *, optional: bool) -> str | None:
 
 
 class CoarseEmotionRequest(_WireModel):
-    """Wire request accepted by ``POST /v1/emotions/classify``."""
+    """Wire request accepted by ``POST /v2/emotions/classify``."""
 
     hs01: Annotated[str, Field(min_length=1, max_length=2000)]
     hs02: Annotated[str, Field(min_length=1, max_length=2000)]
@@ -123,12 +123,17 @@ class CoarseEmotionTopPrediction(_WireModel):
 
 
 class CoarseEmotionResponse(_WireModel):
-    """Validated six-class response from the coarse emotion endpoint."""
+    """Validated Emotion Taxonomy v2 response from the AI service."""
 
+    taxonomy_version: Literal["v2"]
     model_version: NonEmptyString
+    threshold_version: NonEmptyString
     predicted_emotion: CoarseEmotionLabel
     predicted_label_id: Annotated[JsonInteger, Field(ge=0, le=5)]
+    emotion: CoarseEmotionLabel | None
     confidence: Probability
+    margin: Probability
+    provisional: StrictBool
     is_uncertain: StrictBool
     uncertainty_reason: UncertaintyReason | None
     probabilities: Annotated[
@@ -182,6 +187,20 @@ class CoarseEmotionResponse(_WireModel):
 
         if self.is_uncertain != (self.uncertainty_reason is not None):
             raise ValueError("uncertainty_reason must match is_uncertain")
+        if self.provisional != self.is_uncertain:
+            raise ValueError("provisional must match is_uncertain")
+        expected_emotion = None if self.provisional else winner
+        if self.emotion is not expected_emotion:
+            raise ValueError("emotion must be null exactly when provisional")
+
+        expected_margin = ordered[0][1] - ordered[1][1]
+        if not math.isclose(
+            self.margin,
+            expected_margin,
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        ):
+            raise ValueError("margin must equal the top-one/top-two difference")
         return self
 
 

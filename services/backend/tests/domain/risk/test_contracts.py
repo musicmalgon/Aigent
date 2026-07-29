@@ -75,6 +75,50 @@ def test_request_without_optional_emotion_metadata_matches_contract() -> None:
     )
 
 
+def test_request_contract_accepts_v2_lethargy_probabilities() -> None:
+    schema = load_schema(REQUEST_PATH)
+    payload = {
+        "current": {
+            "emotion_probabilities": {
+                "기쁨": 0.05,
+                "불안": 0.10,
+                "당황": 0.05,
+                "분노": 0.05,
+                "슬픔": 0.05,
+                "무기력": 0.70,
+            },
+            "emotion_confidence": 0.70,
+            "emotion_uncertain": False,
+        }
+    }
+
+    Draft202012Validator(schema).validate(payload)
+    request = BurnoutRiskEvaluationRequest.model_validate(payload)
+    assert request.current.emotion_probabilities is not None
+    assert request.current.emotion_probabilities.lethargy == 0.70
+    Draft202012Validator(schema).validate(
+        request.model_dump(mode="json", by_alias=True)
+    )
+
+
+def test_request_contract_rejects_mixed_v1_and_v2_tail_labels() -> None:
+    schema = load_schema(REQUEST_PATH)
+    probabilities = {
+        "기쁨": 0.05,
+        "불안": 0.10,
+        "당황": 0.05,
+        "분노": 0.05,
+        "슬픔": 0.05,
+        "상처": 0.35,
+        "무기력": 0.35,
+    }
+    payload = {"current": {"emotion_probabilities": probabilities}}
+
+    assert list(Draft202012Validator(schema).iter_errors(payload))
+    with pytest.raises(ValueError):
+        BurnoutRiskEvaluationRequest.model_validate(payload)
+
+
 def test_fatigue_above_ten_matches_request_contract_and_pydantic() -> None:
     schema = load_schema(REQUEST_PATH)
     payload = {

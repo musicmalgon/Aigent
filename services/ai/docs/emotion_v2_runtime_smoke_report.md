@@ -90,6 +90,7 @@ and top1 - top2 >= 0.15
 
 ```json
 {
+  "taxonomy_version": "v2",
   "threshold_version": "mvp-v1",
   "predicted_emotion": "불안",
   "emotion": null,
@@ -105,6 +106,7 @@ and top1 - top2 >= 0.15
 
 ```json
 {
+  "taxonomy_version": "v2",
   "threshold_version": "mvp-v1",
   "predicted_emotion": "기쁨",
   "emotion": "기쁨",

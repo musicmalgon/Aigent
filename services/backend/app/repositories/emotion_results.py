@@ -17,7 +17,22 @@ def create_emotion_result(
 ) -> EmotionAnalysisResult:
     result = EmotionAnalysisResult(
         user_id=user_id,
-        **payload.model_dump(),
+        record_date=payload.record_date,
+        analyzed_at=payload.analyzed_at,
+        taxonomy_version=payload.taxonomy_version.value,
+        model_version=payload.model_version,
+        predicted_emotion=payload.predicted_emotion.value,
+        emotion=payload.emotion.value if payload.emotion is not None else None,
+        confidence=payload.confidence,
+        margin=payload.margin,
+        provisional=payload.provisional,
+        is_uncertain=payload.is_uncertain,
+        probabilities={
+            label.value: probability
+            for label, probability in payload.probabilities.items()
+        },
+        threshold_version=payload.threshold_version,
+        input_hash=payload.input_hash,
     )
     session.add(result)
     session.flush()

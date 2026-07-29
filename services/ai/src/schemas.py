@@ -632,7 +632,7 @@ class RemindCoarseEmotionTopPrediction(_SchemaModel):
 class RemindCoarseEmotionInferenceResponse(_SchemaModel):
     """Non-diagnostic output for the independently versioned v2 taxonomy."""
 
-    label_schema_version: Literal["remind-coarse-v2"]
+    taxonomy_version: Literal["v2"]
     model_version: NonEmptyString
     threshold_version: NonEmptyString
     predicted_emotion: RemindCoarseEmotionLabel

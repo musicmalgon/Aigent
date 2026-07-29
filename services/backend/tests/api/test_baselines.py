@@ -510,6 +510,7 @@ def test_invalid_stored_emotion_data_returns_safe_500_without_baseline(
                 analyzed_at=datetime(2026, 7, 20, 9, tzinfo=UTC),
                 model_version="invalid-test-model",
                 predicted_emotion=EmotionLabel.JOY.value,
+                emotion=EmotionLabel.JOY.value,
                 confidence=1.0,
                 is_uncertain=False,
                 probabilities={EmotionLabel.JOY.value: 1.0},

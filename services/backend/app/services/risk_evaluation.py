@@ -145,11 +145,20 @@ def _emotion_snapshot(
             "record_date": emotion_result.record_date,
             "analyzed_at": emotion_result.analyzed_at,
             "created_at": emotion_result.created_at,
+            "taxonomy_version": emotion_result.taxonomy_version,
             "model_version": emotion_result.model_version,
             "predicted_emotion": emotion_result.predicted_emotion,
+            "emotion": emotion_result.emotion,
             "confidence": float(emotion_result.confidence),
+            "margin": (
+                float(emotion_result.margin)
+                if emotion_result.margin is not None
+                else None
+            ),
+            "provisional": emotion_result.provisional,
             "is_uncertain": emotion_result.is_uncertain,
             "probabilities": emotion_result.probabilities,
+            "threshold_version": emotion_result.threshold_version,
             "input_hash": emotion_result.input_hash,
         }
     )

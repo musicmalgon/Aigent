@@ -11,13 +11,26 @@ database read transaction while waiting for the downstream response. It reuses
 one AI service client per application lifespan and closes only clients it
 creates.
 
-The request text is sent to the AI service but is not stored, logged, returned,
-or included in error details. The persistence row contains only the model
-version, predicted emotion, confidence, uncertainty flag, the exact six-class
-probability distribution, and timestamps. `input_hash` remains `NULL` because
-there is no existing keyed-HMAC setting or utility. AI-only fields such as
+The request text is sent to `POST /v2/emotions/classify` but is not stored,
+logged, returned, or included in error details. The Backend strictly validates
+the v2 response and persists `taxonomy_version`, `model_version`,
+`threshold_version`, `predicted_emotion`, nullable adopted `emotion`,
+`confidence`, `margin`, `provisional`, `is_uncertain`, and the exact
+six-class probability distribution. `input_hash` remains `NULL` because there
+is no existing keyed-HMAC setting or utility. AI-only fields such as
 `predicted_label_id`, `uncertainty_reason`, `top_predictions`, and `latency_ms`
 are not persisted or returned.
+
+Taxonomy v1 and v2 are separate historical meanings. A v1 `상처` row remains
+v1 and is never reinterpreted as v2 `무기력`. Existing rows are backfilled only
+with facts recoverable from the old storage contract: `taxonomy_version=v1`,
+`emotion=predicted_emotion`, `provisional=false`, and null v2 threshold
+provenance.
+
+For v2, `predicted_emotion` always preserves model argmax. When confidence or
+margin does not satisfy the versioned abstention policy, `emotion` is null and
+`provisional` is true. This is a successful analysis with preserved
+provenance, not a downstream call failure.
 
 The current persistence model has no daily-record provenance foreign key, so
 the API associates the result through the verified user and `record_date`.

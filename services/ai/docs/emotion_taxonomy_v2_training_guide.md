@@ -232,7 +232,7 @@ Transformer 출력의 `comparison.json`은 다음 동일성을 먼저 검증한�
 GPU full training과 오류 분석으로 최종 모델을 선정한 다음 별도 통합 변경에서:
 
 1. v2 confidence threshold와 top-2 margin을 validation에서 보정
-2. `label_schema_version`과 `model_version`을 inference 응답에 고정
+2. `taxonomy_version`과 `model_version`을 inference 응답에 고정
 3. 공유 계약과 백엔드가 v1 이력과 v2 결과를 구분하도록 확장
 4. 기존 `상처` 저장 행을 `무기력`으로 변환하지 않고 v1 이력으로 보존
 5. 행동-only와 행동+감정 Risk 결과를 비교한 뒤 감정 영향력을 확정

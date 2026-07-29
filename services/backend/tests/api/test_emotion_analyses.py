@@ -6,7 +6,7 @@ import logging
 import uuid
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any, cast
 
 import httpx
@@ -27,6 +27,12 @@ from app.core.database import get_db
 from app.main import create_app
 from app.models.persistence import EmotionAnalysisResult
 from app.repositories import emotion_results
+from app.schemas.persistence import (
+    EmotionLabel,
+    EmotionResultCreate,
+    EmotionTaxonomyVersion,
+    EmotionV2Label,
+)
 from app.services.baselines import calculate_and_store_baseline
 from tests.daily_record_contract import canonical_daily_record_payload
 
@@ -42,11 +48,11 @@ def valid_ai_payload(
 ) -> dict[str, Any]:
     probabilities = probabilities or {
         CoarseEmotionLabel.JOY: 0.05,
-        CoarseEmotionLabel.ANXIETY: 0.55,
-        CoarseEmotionLabel.EMBARRASSMENT: 0.12,
-        CoarseEmotionLabel.ANGER: 0.08,
-        CoarseEmotionLabel.SADNESS: 0.11,
-        CoarseEmotionLabel.HURT: 0.09,
+        CoarseEmotionLabel.ANXIETY: 0.70,
+        CoarseEmotionLabel.EMBARRASSMENT: 0.07,
+        CoarseEmotionLabel.ANGER: 0.05,
+        CoarseEmotionLabel.SADNESS: 0.07,
+        CoarseEmotionLabel.LETHARGY: 0.06,
     }
     labels = list(CoarseEmotionLabel)
     ordered = sorted(
@@ -54,11 +60,17 @@ def valid_ai_payload(
         key=lambda item: (-item[1], labels.index(item[0])),
     )
     predicted_emotion, confidence = ordered[0]
+    margin = confidence - ordered[1][1]
     return {
-        "model_version": "coarse-v1",
+        "taxonomy_version": "v2",
+        "model_version": "coarse-v2",
+        "threshold_version": "mvp-v1",
         "predicted_emotion": predicted_emotion.value,
         "predicted_label_id": labels.index(predicted_emotion),
+        "emotion": predicted_emotion.value,
         "confidence": confidence,
+        "margin": margin,
+        "provisional": False,
         "is_uncertain": False,
         "uncertainty_reason": None,
         "probabilities": {
@@ -234,9 +246,14 @@ def test_success_normalizes_request_and_returns_only_stored_result(
     uuid.UUID(body["id"])
     uuid.UUID(body["user_id"])
     assert body["record_date"] == RECORD_DATE
-    assert body["model_version"] == "coarse-v1"
+    assert body["taxonomy_version"] == "v2"
+    assert body["model_version"] == "coarse-v2"
+    assert body["threshold_version"] == "mvp-v1"
     assert body["predicted_emotion"] == CoarseEmotionLabel.ANXIETY.value
-    assert body["confidence"] == 0.55
+    assert body["emotion"] == CoarseEmotionLabel.ANXIETY.value
+    assert body["confidence"] == 0.70
+    assert body["margin"] == pytest.approx(0.63)
+    assert body["provisional"] is False
     assert body["is_uncertain"] is False
     assert body["probabilities"] == valid_ai_payload()["probabilities"]
     for field in ("analyzed_at", "created_at"):
@@ -260,6 +277,10 @@ def test_success_normalizes_request_and_returns_only_stored_result(
         assert stored is not None
         assert stored.user_id == user_id
         assert stored.record_date == date.fromisoformat(RECORD_DATE)
+        assert stored.taxonomy_version == "v2"
+        assert stored.emotion == CoarseEmotionLabel.ANXIETY.value
+        assert stored.provisional is False
+        assert stored.threshold_version == "mvp-v1"
         assert stored.input_hash is None
         assert stored.probabilities == valid_ai_payload()["probabilities"]
         assert (
@@ -270,6 +291,65 @@ def test_success_normalizes_request_and_returns_only_stored_result(
             )
             == 0
         )
+
+
+def test_v2_abstention_is_saved_as_provenance_not_call_failure(
+    app_settings: Settings,
+    migrated_engine: Engine,
+) -> None:
+    probabilities = {
+        CoarseEmotionLabel.ANGER: 0.05,
+        CoarseEmotionLabel.JOY: 0.05,
+        CoarseEmotionLabel.ANXIETY: 0.40,
+        CoarseEmotionLabel.EMBARRASSMENT: 0.05,
+        CoarseEmotionLabel.SADNESS: 0.35,
+        CoarseEmotionLabel.LETHARGY: 0.10,
+    }
+    payload = valid_ai_payload(probabilities)
+    payload.update(
+        emotion=None,
+        provisional=True,
+        is_uncertain=True,
+        uncertainty_reason="small_margin",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(request, payload)
+
+    with emotion_api_client(app_settings, migrated_engine, handler) as client:
+        headers, user_id = authenticated_headers(client)
+        create_daily_record(client, headers)
+        response = client.post(
+            BASE_PATH,
+            headers=headers,
+            json={
+                "record_date": RECORD_DATE,
+                "hs01": "오늘은 그냥 평범했다",
+                "hs02": "특별한 일은 없었다",
+            },
+        )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["user_id"] == user_id
+    assert body["taxonomy_version"] == "v2"
+    assert body["predicted_emotion"] == "불안"
+    assert body["emotion"] is None
+    assert body["confidence"] == 0.40
+    assert body["margin"] == pytest.approx(0.05)
+    assert body["provisional"] is True
+    assert body["threshold_version"] == "mvp-v1"
+
+    with Session(migrated_engine) as session:
+        stored = session.scalar(select(EmotionAnalysisResult))
+        assert stored is not None
+        assert stored.predicted_emotion == "불안"
+        assert stored.emotion is None
+        assert stored.provisional is True
+        assert stored.probabilities == {
+            label.value: probability
+            for label, probability in probabilities.items()
+        }
 
 
 def test_missing_daily_record_returns_not_found_before_ai_call(
@@ -469,17 +549,17 @@ def test_repeated_analysis_is_append_only_and_baseline_uses_latest(
                 CoarseEmotionLabel.EMBARRASSMENT: 0.04,
                 CoarseEmotionLabel.ANGER: 0.04,
                 CoarseEmotionLabel.SADNESS: 0.04,
-                CoarseEmotionLabel.HURT: 0.03,
+                CoarseEmotionLabel.LETHARGY: 0.03,
             }
         ),
         valid_ai_payload(
             {
                 CoarseEmotionLabel.JOY: 0.1,
-                CoarseEmotionLabel.ANXIETY: 0.55,
-                CoarseEmotionLabel.EMBARRASSMENT: 0.1,
-                CoarseEmotionLabel.ANGER: 0.1,
-                CoarseEmotionLabel.SADNESS: 0.08,
-                CoarseEmotionLabel.HURT: 0.07,
+                CoarseEmotionLabel.ANXIETY: 0.70,
+                CoarseEmotionLabel.EMBARRASSMENT: 0.05,
+                CoarseEmotionLabel.ANGER: 0.05,
+                CoarseEmotionLabel.SADNESS: 0.05,
+                CoarseEmotionLabel.LETHARGY: 0.05,
             }
         ),
     ]
@@ -526,6 +606,84 @@ def test_repeated_analysis_is_append_only_and_baseline_uses_latest(
         )
         assert baseline.negative_emotion_probability == 0.9
         assert baseline.sample_days == 1
+
+
+def test_history_serializes_mixed_v1_and_v2_taxonomies(
+    app_settings: Settings,
+    migrated_engine: Engine,
+) -> None:
+    def unused_handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"unexpected AI request: {request.url}")
+
+    with emotion_api_client(
+        app_settings,
+        migrated_engine,
+        unused_handler,
+    ) as client:
+        headers, user_id = authenticated_headers(client)
+        with Session(migrated_engine) as session:
+            v1 = emotion_results.create_emotion_result(
+                session,
+                user_id=user_id,
+                payload=EmotionResultCreate(
+                    record_date=date(2026, 7, 19),
+                    analyzed_at=datetime(2026, 7, 19, 9, tzinfo=UTC),
+                    model_version="legacy-v1",
+                    predicted_emotion=EmotionLabel.HURT,
+                    confidence=0.7,
+                    is_uncertain=True,
+                    probabilities={
+                        EmotionLabel.JOY: 0.05,
+                        EmotionLabel.ANXIETY: 0.05,
+                        EmotionLabel.EMBARRASSMENT: 0.05,
+                        EmotionLabel.ANGER: 0.05,
+                        EmotionLabel.SADNESS: 0.10,
+                        EmotionLabel.HURT: 0.70,
+                    },
+                ),
+            )
+            v2 = emotion_results.create_emotion_result(
+                session,
+                user_id=user_id,
+                payload=EmotionResultCreate(
+                    record_date=date(2026, 7, 20),
+                    analyzed_at=datetime(2026, 7, 20, 9, tzinfo=UTC),
+                    taxonomy_version=EmotionTaxonomyVersion.V2,
+                    model_version="coarse-v2",
+                    predicted_emotion=EmotionV2Label.LETHARGY,
+                    emotion=EmotionV2Label.LETHARGY,
+                    confidence=0.70,
+                    margin=0.60,
+                    provisional=False,
+                    is_uncertain=False,
+                    probabilities={
+                        EmotionV2Label.ANGER: 0.05,
+                        EmotionV2Label.JOY: 0.05,
+                        EmotionV2Label.ANXIETY: 0.05,
+                        EmotionV2Label.EMBARRASSMENT: 0.05,
+                        EmotionV2Label.SADNESS: 0.10,
+                        EmotionV2Label.LETHARGY: 0.70,
+                    },
+                    threshold_version="mvp-v1",
+                ),
+            )
+            session.commit()
+            v1_id = v1.id
+            v2_id = v2.id
+
+        history = client.get(BASE_PATH, headers=headers)
+        latest = client.get(f"{BASE_PATH}/latest", headers=headers)
+        legacy = client.get(f"{BASE_PATH}/{v1_id}", headers=headers)
+
+    assert history.status_code == latest.status_code == legacy.status_code == 200
+    rows = history.json()
+    assert [row["id"] for row in rows] == [v2_id, v1_id]
+    assert rows[0]["taxonomy_version"] == "v2"
+    assert rows[0]["emotion"] == "무기력"
+    assert rows[1]["taxonomy_version"] == "v1"
+    assert rows[1]["emotion"] == "상처"
+    assert latest.json()["id"] == v2_id
+    assert legacy.json()["predicted_emotion"] == "상처"
 
 
 @pytest.mark.parametrize(
@@ -707,12 +865,17 @@ def test_openapi_declares_minimal_authenticated_contract(
     assert {
         "id",
         "user_id",
-        "record_date",
-        "analyzed_at",
-        "model_version",
-        "predicted_emotion",
-        "confidence",
-        "is_uncertain",
-        "probabilities",
-        "created_at",
+            "record_date",
+            "analyzed_at",
+            "taxonomy_version",
+            "model_version",
+            "predicted_emotion",
+            "emotion",
+            "confidence",
+            "margin",
+            "provisional",
+            "is_uncertain",
+            "probabilities",
+            "threshold_version",
+            "created_at",
     } == set(response_schema["properties"])

@@ -10,7 +10,9 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     StrictBool,
+    model_serializer,
     model_validator,
 )
 
@@ -121,23 +123,45 @@ class EmotionProbabilities(_ContractModel):
     embarrassment: Probability = Field(alias="당황")
     anger: Probability = Field(alias="분노")
     sadness: Probability = Field(alias="슬픔")
-    hurt: Probability = Field(alias="상처")
+    hurt: Probability | None = Field(default=None, alias="상처")
+    lethargy: Probability | None = Field(default=None, alias="무기력")
 
     @model_validator(mode="after")
     def validate_probability_sum(self) -> EmotionProbabilities:
+        if (self.hurt is None) == (self.lethargy is None):
+            raise ValueError(
+                "emotion probabilities require exactly one taxonomy tail label"
+            )
         if abs(sum(self.as_tuple()) - 1.0) > 1e-6:
             raise ValueError("emotion probabilities must sum to 1 within 0.000001")
         return self
 
     def as_tuple(self) -> tuple[float, ...]:
+        taxonomy_tail = (
+            self.hurt if self.hurt is not None else self.lethargy
+        )
+        assert taxonomy_tail is not None
         return (
             self.joy,
             self.anxiety,
             self.embarrassment,
             self.anger,
             self.sadness,
-            self.hurt,
+            taxonomy_tail,
         )
+
+    @model_serializer(mode="wrap")
+    def serialize_probabilities(
+        self,
+        handler: SerializerFunctionWrapHandler,
+    ) -> dict[str, object]:
+        serialized = handler(self)
+        assert isinstance(serialized, dict)
+        return {
+            key: value
+            for key, value in serialized.items()
+            if value is not None
+        }
 
     @property
     def negative_probability(self) -> float:

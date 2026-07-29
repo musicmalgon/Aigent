@@ -422,7 +422,7 @@ class CoarseTransformerEmotionAnalyzer:
             margin_threshold=self.settings.margin_threshold,
         )
         return RemindCoarseEmotionInferenceResponse(
-            label_schema_version="remind-coarse-v2",
+            taxonomy_version="v2",
             model_version=self.settings.model_version,
             threshold_version=self.settings.threshold_version,
             predicted_emotion=winner,

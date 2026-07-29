@@ -121,6 +121,10 @@ def calculate_baseline(
         window_start=window_start,
         window_end=window_end,
     ).items():
+        if result.taxonomy_version == "v2" and (
+            result.emotion is None or result.provisional
+        ):
+            continue
         probabilities = EmotionProbabilities.model_validate(
             result.probabilities
         )

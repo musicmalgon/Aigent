@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 TRAINING_MAX_LENGTH = 128
+MVP_V1_CONFIDENCE_THRESHOLD = 0.65
+MVP_V1_MARGIN_THRESHOLD = 0.15
+MVP_V1_THRESHOLD_VERSION = "mvp-v1"
 
 
 def _optional_path(value: str | None) -> Path | None:
@@ -55,9 +58,9 @@ class CoarseEmotionSettings:
     label_mapping_path: Path | None = None
     device: str = "auto"
     max_length: int = TRAINING_MAX_LENGTH
-    confidence_threshold: float = 0.65
-    margin_threshold: float = 0.15
-    threshold_version: str = "mvp-v1"
+    confidence_threshold: float = MVP_V1_CONFIDENCE_THRESHOLD
+    margin_threshold: float = MVP_V1_MARGIN_THRESHOLD
+    threshold_version: str = MVP_V1_THRESHOLD_VERSION
     model_version: str = "klue-roberta-remind-coarse-v2"
     top_k: int = 2
 
@@ -73,6 +76,14 @@ class CoarseEmotionSettings:
             raise ValueError("margin_threshold must be between 0 and 1")
         if not self.threshold_version.strip():
             raise ValueError("threshold_version must not be empty")
+        if self.threshold_version == MVP_V1_THRESHOLD_VERSION and (
+            self.confidence_threshold != MVP_V1_CONFIDENCE_THRESHOLD
+            or self.margin_threshold != MVP_V1_MARGIN_THRESHOLD
+        ):
+            raise ValueError(
+                "mvp-v1 requires confidence_threshold=0.65 and "
+                "margin_threshold=0.15"
+            )
         if not 1 <= self.top_k <= 6:
             raise ValueError("top_k must be between 1 and 6")
         if not self.model_version.strip():
@@ -89,7 +100,7 @@ class CoarseEmotionSettings:
         if not model_version:
             raise ValueError("EMOTION_MODEL_VERSION must not be empty")
         threshold_version = values.get(
-            "EMOTION_THRESHOLD_VERSION", "mvp-v1"
+            "EMOTION_THRESHOLD_VERSION", MVP_V1_THRESHOLD_VERSION
         ).strip()
         if not threshold_version:
             raise ValueError("EMOTION_THRESHOLD_VERSION must not be empty")
@@ -112,10 +123,14 @@ class CoarseEmotionSettings:
                 maximum=4096,
             ),
             confidence_threshold=_bounded_float(
-                values, "EMOTION_CONFIDENCE_THRESHOLD", 0.65
+                values,
+                "EMOTION_CONFIDENCE_THRESHOLD",
+                MVP_V1_CONFIDENCE_THRESHOLD,
             ),
             margin_threshold=_bounded_float(
-                values, "EMOTION_MARGIN_THRESHOLD", 0.15
+                values,
+                "EMOTION_MARGIN_THRESHOLD",
+                MVP_V1_MARGIN_THRESHOLD,
             ),
             threshold_version=threshold_version,
             model_version=model_version,
@@ -129,4 +144,10 @@ class CoarseEmotionSettings:
         )
 
 
-__all__ = ["TRAINING_MAX_LENGTH", "CoarseEmotionSettings"]
+__all__ = [
+    "MVP_V1_CONFIDENCE_THRESHOLD",
+    "MVP_V1_MARGIN_THRESHOLD",
+    "MVP_V1_THRESHOLD_VERSION",
+    "TRAINING_MAX_LENGTH",
+    "CoarseEmotionSettings",
+]

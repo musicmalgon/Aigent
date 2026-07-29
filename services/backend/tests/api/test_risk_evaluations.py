@@ -65,24 +65,72 @@ class FakeAIServiceClient:
         del request
         probabilities = {
             label: (
-                0.5 if label is CoarseEmotionLabel.JOY else 0.1
+                0.7 if label is CoarseEmotionLabel.JOY else 0.06
             )
             for label in CoarseEmotionLabel
         }
         return CoarseEmotionResponse(
-            model_version="coarse-test-v1",
+            taxonomy_version="v2",
+            model_version="coarse-test-v2",
+            threshold_version="mvp-v1",
             predicted_emotion=CoarseEmotionLabel.JOY,
-            predicted_label_id=0,
-            confidence=0.5,
+            predicted_label_id=1,
+            emotion=CoarseEmotionLabel.JOY,
+            confidence=0.7,
+            margin=0.64,
+            provisional=False,
             is_uncertain=False,
             uncertainty_reason=None,
             probabilities=probabilities,
             top_predictions=[
                 CoarseEmotionTopPrediction(
                     emotion=CoarseEmotionLabel.JOY,
-                    label_id=0,
-                    probability=0.5,
+                    label_id=1,
+                    probability=0.7,
                 )
+            ],
+            latency_ms=1.0,
+        )
+
+
+class AbstainingAIServiceClient:
+    async def classify_emotion(
+        self,
+        request: CoarseEmotionRequest,
+    ) -> CoarseEmotionResponse:
+        del request
+        probabilities = {
+            CoarseEmotionLabel.ANGER: 0.05,
+            CoarseEmotionLabel.JOY: 0.05,
+            CoarseEmotionLabel.ANXIETY: 0.40,
+            CoarseEmotionLabel.EMBARRASSMENT: 0.05,
+            CoarseEmotionLabel.SADNESS: 0.35,
+            CoarseEmotionLabel.LETHARGY: 0.10,
+        }
+        return CoarseEmotionResponse(
+            taxonomy_version="v2",
+            model_version="coarse-test-v2",
+            threshold_version="mvp-v1",
+            predicted_emotion=CoarseEmotionLabel.ANXIETY,
+            predicted_label_id=2,
+            emotion=None,
+            confidence=0.40,
+            margin=0.05,
+            provisional=True,
+            is_uncertain=True,
+            uncertainty_reason="small_margin",
+            probabilities=probabilities,
+            top_predictions=[
+                CoarseEmotionTopPrediction(
+                    emotion=CoarseEmotionLabel.ANXIETY,
+                    label_id=2,
+                    probability=0.40,
+                ),
+                CoarseEmotionTopPrediction(
+                    emotion=CoarseEmotionLabel.SADNESS,
+                    label_id=4,
+                    probability=0.35,
+                ),
             ],
             latency_ms=1.0,
         )
@@ -288,6 +336,7 @@ def seed_orchestration_inputs(
                     ),
                     model_version=f"emotion-v{index + 1}",
                     predicted_emotion=EmotionLabel.JOY.value,
+                    emotion=EmotionLabel.JOY.value,
                     confidence=0.8,
                     is_uncertain=False,
                     probabilities=probabilities,
@@ -738,6 +787,82 @@ def test_daily_emotion_baseline_and_risk_apis_form_user_scoped_flow(
         == 404
     )
     assert client.get(BASE_PATH, headers=other_headers).json() == []
+
+
+def test_abstained_v2_emotion_keeps_provenance_but_risk_uses_behavior_only(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers, _ = authenticated_user(
+        client,
+        email="risk-api-abstention@example.com",
+    )
+    for day in range(13, 21):
+        response = client.post(
+            "/api/v1/behavioral-records",
+            headers=headers,
+            json=canonical_daily_record_payload(
+                record_date=f"2026-07-{day:02d}"
+            ),
+        )
+        assert response.status_code == 201, response.text
+
+    application = cast(FastAPI, client.app)
+    application.dependency_overrides[get_ai_service_client] = lambda: cast(
+        AIServiceClient,
+        AbstainingAIServiceClient(),
+    )
+    try:
+        emotion = client.post(
+            "/api/v1/emotion-analyses",
+            headers=headers,
+            json={
+                "record_date": "2026-07-20",
+                "hs01": "오늘은 그냥 평범했다",
+                "hs02": "특별한 일은 없었다",
+            },
+        )
+    finally:
+        application.dependency_overrides.pop(get_ai_service_client, None)
+
+    assert emotion.status_code == 201, emotion.text
+    assert emotion.json()["emotion"] is None
+    assert emotion.json()["provisional"] is True
+
+    baseline = client.post(
+        "/api/v1/baselines",
+        headers=headers,
+        json={"as_of_date": "2026-07-19"},
+    )
+    assert baseline.status_code == 201, baseline.text
+
+    captured: dict[str, BurnoutRiskEvaluationRequest] = {}
+    real_evaluate = api_module.evaluate_prepared_risk
+
+    def capture_request(
+        prepared: PreparedRiskEvaluation,
+    ) -> BurnoutRiskEvaluationResponse:
+        captured["request"] = prepared.request
+        return real_evaluate(prepared)
+
+    monkeypatch.setattr(
+        api_module,
+        "evaluate_prepared_risk",
+        capture_request,
+    )
+
+    risk = client.post(
+        BASE_PATH,
+        headers=headers,
+        json={"date": "2026-07-20"},
+    )
+
+    assert risk.status_code == 201, risk.text
+    assert risk.json()["emotion_analysis_id"] == emotion.json()["id"]
+    current = captured["request"].current
+    assert current.emotion_probabilities is None
+    assert current.emotion_confidence is None
+    assert current.emotion_uncertain is None
 
 
 def test_real_engine_failure_leaves_no_evaluation(

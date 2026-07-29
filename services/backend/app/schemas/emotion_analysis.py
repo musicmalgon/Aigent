@@ -5,7 +5,13 @@ from datetime import date, datetime
 from pydantic import model_validator
 
 from app.clients.ai import CoarseEmotionRequest
-from app.schemas.persistence import EmotionLabel, PersistenceSchema, Probability
+from app.schemas.persistence import (
+    EmotionAnyLabel,
+    EmotionResultCreate,
+    EmotionTaxonomyVersion,
+    PersistenceSchema,
+    Probability,
+)
 
 
 class EmotionAnalysisCreate(CoarseEmotionRequest):
@@ -24,19 +30,34 @@ class EmotionAnalysisRead(PersistenceSchema):
     user_id: str
     record_date: date
     analyzed_at: datetime
+    taxonomy_version: EmotionTaxonomyVersion
     model_version: str
-    predicted_emotion: EmotionLabel
+    predicted_emotion: EmotionAnyLabel
+    emotion: EmotionAnyLabel | None
     confidence: Probability
+    margin: Probability | None
+    provisional: bool
     is_uncertain: bool
-    probabilities: dict[EmotionLabel, Probability]
+    probabilities: dict[EmotionAnyLabel, Probability]
+    threshold_version: str | None
     created_at: datetime
 
     @model_validator(mode="after")
-    def validate_probabilities(self) -> EmotionAnalysisRead:
-        if set(self.probabilities) != set(EmotionLabel):
-            raise ValueError("probabilities must contain exactly six emotion labels")
-        if abs(sum(self.probabilities.values()) - 1.0) > 1e-6:
-            raise ValueError("emotion probabilities must sum to 1 within 0.000001")
+    def validate_contract(self) -> EmotionAnalysisRead:
+        EmotionResultCreate(
+            record_date=self.record_date,
+            analyzed_at=self.analyzed_at,
+            taxonomy_version=self.taxonomy_version,
+            model_version=self.model_version,
+            predicted_emotion=self.predicted_emotion,
+            emotion=self.emotion,
+            confidence=self.confidence,
+            margin=self.margin,
+            provisional=self.provisional,
+            is_uncertain=self.is_uncertain,
+            probabilities=self.probabilities,
+            threshold_version=self.threshold_version,
+        )
         return self
 
 

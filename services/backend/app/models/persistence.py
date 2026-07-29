@@ -189,9 +189,32 @@ class EmotionAnalysisResult(Base):
             name="ck_emotion_input_hash_nonempty",
         ),
         CheckConstraint(
-            "predicted_emotion IN "
-            "('기쁨', '불안', '당황', '분노', '슬픔', '상처')",
-            name="ck_emotion_predicted_label",
+            "("
+            "taxonomy_version = 'v1' "
+            "AND predicted_emotion IN "
+            "('기쁨', '불안', '당황', '분노', '슬픔', '상처') "
+            "AND emotion = predicted_emotion "
+            "AND provisional = 0 "
+            "AND margin IS NULL "
+            "AND threshold_version IS NULL"
+            ") OR ("
+            "taxonomy_version = 'v2' "
+            "AND predicted_emotion IN "
+            "('분노', '기쁨', '불안', '당황', '슬픔', '무기력') "
+            "AND margin IS NOT NULL "
+            "AND threshold_version IS NOT NULL "
+            "AND length(trim(threshold_version)) > 0 "
+            "AND provisional = is_uncertain "
+            "AND ("
+            "(provisional = 1 AND emotion IS NULL) "
+            "OR (provisional = 0 AND emotion = predicted_emotion)"
+            ")"
+            ")",
+            name="ck_emotion_taxonomy_payload",
+        ),
+        CheckConstraint(
+            "margin IS NULL OR (margin >= 0 AND margin <= 1)",
+            name="ck_emotion_margin",
         ),
         Index(
             "ix_emotion_results_user_analyzed_at",
@@ -218,7 +241,14 @@ class EmotionAnalysisResult(Base):
         nullable=False,
     )
     model_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    taxonomy_version: Mapped[str] = mapped_column(
+        String(16),
+        default="v1",
+        server_default="v1",
+        nullable=False,
+    )
     predicted_emotion: Mapped[str] = mapped_column(String(16), nullable=False)
+    emotion: Mapped[str | None] = mapped_column(String(16))
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     is_uncertain: Mapped[bool] = mapped_column(
         Boolean,
@@ -229,6 +259,14 @@ class EmotionAnalysisResult(Base):
         StrictJSON(),
         nullable=False,
     )
+    margin: Mapped[float | None] = mapped_column(Float)
+    provisional: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="0",
+        nullable=False,
+    )
+    threshold_version: Mapped[str | None] = mapped_column(String(64))
     input_hash: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),

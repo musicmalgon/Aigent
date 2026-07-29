@@ -31,6 +31,15 @@ Analysis is optional and its provenance is returned as `null` when absent.
 Every successful request appends a new evaluation; repeated evaluation of the
 same date never overwrites prior results.
 
+Emotion Taxonomy v2 abstention is treated as no usable emotion signal. When
+the selected analysis has `emotion=null` or `provisional=true`, its row ID
+remains in `emotion_analysis_id` for provenance, but
+`emotion_probabilities`, `emotion_confidence`, and `emotion_uncertain` are all
+null in the Risk Engine request. The engine therefore evaluates behavioral
+signals only. Accepted v2 results and legacy v1 results retain their
+taxonomy-specific probability label set; v1 `상처` is never converted to v2
+`무기력`.
+
 The complete shared Daily Record contract is validated before its timezone is
 trusted. Therefore missing or invalid legacy field metadata returns `503` even
 when the requested date would otherwise be in the future; the API does not use

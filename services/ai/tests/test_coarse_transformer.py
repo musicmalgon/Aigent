@@ -323,6 +323,25 @@ def test_uncertainty_policies_cover_confidence_and_margin() -> None:
     ) is UncertaintyReason.LOW_CONFIDENCE
 
 
+def test_uncertainty_threshold_boundaries_are_inclusive() -> None:
+    assert (
+        classify_uncertainty(
+            [0.65, 0.10, 0.08, 0.07, 0.06, 0.04],
+            confidence_threshold=0.65,
+            margin_threshold=0.15,
+        )
+        is None
+    )
+    assert (
+        classify_uncertainty(
+            [0.55, 0.40, 0.02, 0.01, 0.01, 0.01],
+            confidence_threshold=0.55,
+            margin_threshold=0.15,
+        )
+        is None
+    )
+
+
 def test_device_selection_requires_explicit_accelerator_availability() -> None:
     assert select_inference_device(_FakeTorch(cuda=True), "auto") == "cuda"
     assert select_inference_device(_FakeTorch(mps=True), "auto") == "mps"
@@ -425,3 +444,10 @@ def test_settings_read_configurable_thresholds_and_paths() -> None:
     assert defaults.confidence_threshold == 0.65
     assert defaults.margin_threshold == 0.15
     assert defaults.threshold_version == "mvp-v1"
+
+    with pytest.raises(ValueError, match="mvp-v1 requires"):
+        CoarseEmotionSettings(
+            confidence_threshold=0.60,
+            margin_threshold=0.15,
+            threshold_version="mvp-v1",
+        )

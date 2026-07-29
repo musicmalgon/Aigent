@@ -62,10 +62,15 @@ def request_model() -> CoarseEmotionRequest:
 
 def valid_response_payload() -> dict[str, Any]:
     return {
-        "model_version": "synthetic-coarse-v1",
+        "taxonomy_version": "v2",
+        "model_version": "synthetic-coarse-v2",
+        "threshold_version": "mvp-v1",
         "predicted_emotion": "불안",
-        "predicted_label_id": 1,
+        "predicted_label_id": 2,
+        "emotion": "불안",
         "confidence": 0.54,
+        "margin": 0.40,
+        "provisional": False,
         "is_uncertain": False,
         "uncertainty_reason": None,
         "probabilities": {
@@ -74,11 +79,11 @@ def valid_response_payload() -> dict[str, Any]:
             "당황": 0.14,
             "분노": 0.08,
             "슬픔": 0.13,
-            "상처": 0.08,
+            "무기력": 0.08,
         },
         "top_predictions": [
-            {"emotion": "불안", "label_id": 1, "probability": 0.54},
-            {"emotion": "당황", "label_id": 2, "probability": 0.14},
+            {"emotion": "불안", "label_id": 2, "probability": 0.54},
+            {"emotion": "당황", "label_id": 3, "probability": 0.14},
         ],
         "latency_ms": 1.5,
     }
@@ -116,7 +121,7 @@ def test_base_url_endpoint_join_request_serialization_and_timeouts() -> None:
     assert result.predicted_emotion is CoarseEmotionLabel.ANXIETY
     assert observed == {
         "method": "POST",
-        "url": "https://ai.internal/service/v1/emotions/classify",
+        "url": "https://ai.internal/service/v2/emotions/classify",
         "json": {
             "hs01": "합성 첫 문장",
             "hs02": "합성 두 번째 문장",
@@ -185,7 +190,7 @@ def test_timeout_is_safely_classified(
         run(classify_with(handler))
 
     assert captured.value.timeout_type == timeout_type
-    assert captured.value.endpoint == "v1/emotions/classify"
+    assert captured.value.endpoint == "v2/emotions/classify"
     assert isinstance(captured.value.__cause__, exception_type)
     assert "private timeout detail" not in str(captured.value)
 
@@ -286,11 +291,11 @@ def invalid_response_cases() -> list[tuple[str, dict[str, Any]]]:
 
     unknown_class = valid_response_payload()
     unknown_class["probabilities"]["놀람"] = unknown_class["probabilities"].pop(
-        "상처"
+        "무기력"
     )
 
     missing_class = valid_response_payload()
-    missing_class["probabilities"].pop("상처")
+    missing_class["probabilities"].pop("무기력")
 
     out_of_range = valid_response_payload()
     out_of_range["probabilities"]["기쁨"] = 1.1
@@ -301,6 +306,14 @@ def invalid_response_cases() -> list[tuple[str, dict[str, Any]]]:
     extra_field = valid_response_payload()
     extra_field["private_text"] = "must not be accepted"
 
+    wrong_taxonomy = valid_response_payload()
+    wrong_taxonomy["taxonomy_version"] = "v1"
+
+    inconsistent_abstention = valid_response_payload()
+    inconsistent_abstention["provisional"] = True
+    inconsistent_abstention["is_uncertain"] = True
+    inconsistent_abstention["uncertainty_reason"] = "small_margin"
+
     return [
         ("missing field", missing_field),
         ("wrong type", wrong_type),
@@ -309,6 +322,8 @@ def invalid_response_cases() -> list[tuple[str, dict[str, Any]]]:
         ("probability out of range", out_of_range),
         ("probabilities do not sum to one", bad_sum),
         ("extra field", extra_field),
+        ("wrong taxonomy", wrong_taxonomy),
+        ("inconsistent abstention", inconsistent_abstention),
     ]
 
 
@@ -362,7 +377,7 @@ def test_auth_token_and_sensitive_request_are_not_logged(
         run(scenario())
 
     assert observed_authorization == f"Bearer {token}"
-    assert "v1/emotions/classify" in caplog.text
+    assert "v2/emotions/classify" in caplog.text
     assert "validation=success" in caplog.text
     assert sensitive_text not in caplog.text
     assert token not in caplog.text
@@ -535,12 +550,16 @@ def test_backend_models_validate_shared_ai_json_contracts() -> None:
     repository_root = Path(__file__).resolve().parents[4]
     schemas = repository_root / "packages" / "contracts" / "schemas"
     request_schema = json.loads(
-        (schemas / "coarse_emotion_inference_request.schema.json").read_text(
+        (
+            schemas / "remind_coarse_emotion_inference_request.schema.json"
+        ).read_text(
             encoding="utf-8"
         )
     )
     response_schema = json.loads(
-        (schemas / "coarse_emotion_inference_response.schema.json").read_text(
+        (
+            schemas / "remind_coarse_emotion_inference_response.schema.json"
+        ).read_text(
             encoding="utf-8"
         )
     )

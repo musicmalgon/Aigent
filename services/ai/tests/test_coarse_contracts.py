@@ -129,7 +129,7 @@ def test_v2_contract_and_pydantic_use_the_frozen_model_label_order() -> None:
     payload = _v2_response_payload()
     assert Draft202012Validator(response_schema).is_valid(payload)
     response = RemindCoarseEmotionInferenceResponse.model_validate(payload)
-    assert response.label_schema_version == "remind-coarse-v2"
+    assert response.taxonomy_version == "v2"
     assert response.threshold_version == "mvp-v1"
     assert response.predicted_emotion is RemindCoarseEmotionLabel.LETHARGY
     assert response.emotion is RemindCoarseEmotionLabel.LETHARGY

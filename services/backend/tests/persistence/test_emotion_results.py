@@ -16,7 +16,13 @@ from app.repositories.emotion_results import (
     get_latest_emotion_result_by_date,
     list_emotion_results,
 )
-from app.schemas.persistence import EmotionLabel, EmotionResultCreate
+from app.schemas.persistence import (
+    EmotionLabel,
+    EmotionResultCreate,
+    EmotionTaxonomyVersion,
+    EmotionV2Label,
+)
+from app.services.emotion_analysis import to_emotion_analysis_read
 
 from .helpers import probabilities
 
@@ -68,6 +74,67 @@ def test_create_latest_list_and_scope(
         is None
     )
     assert latest.input_hash == "sha256-like-irreversible-hash"
+
+
+def test_v1_and_v2_rows_round_trip_without_reinterpreting_labels(
+    db_session: Session,
+    user: User,
+) -> None:
+    analyzed_at = datetime(2026, 7, 20, 9, tzinfo=UTC)
+    v1 = create_emotion_result(
+        db_session,
+        user_id=user.id,
+        payload=EmotionResultCreate(
+            record_date=date(2026, 7, 19),
+            analyzed_at=analyzed_at,
+            model_version="coarse-v1",
+            predicted_emotion=EmotionLabel.HURT,
+            confidence=0.8,
+            is_uncertain=False,
+            probabilities=probabilities(),
+        ),
+    )
+    v2_probabilities = {
+        EmotionV2Label.ANGER: 0.05,
+        EmotionV2Label.JOY: 0.05,
+        EmotionV2Label.ANXIETY: 0.05,
+        EmotionV2Label.EMBARRASSMENT: 0.05,
+        EmotionV2Label.SADNESS: 0.10,
+        EmotionV2Label.LETHARGY: 0.70,
+    }
+    v2 = create_emotion_result(
+        db_session,
+        user_id=user.id,
+        payload=EmotionResultCreate(
+            record_date=date(2026, 7, 20),
+            analyzed_at=analyzed_at + timedelta(hours=1),
+            taxonomy_version=EmotionTaxonomyVersion.V2,
+            model_version="coarse-v2",
+            predicted_emotion=EmotionV2Label.LETHARGY,
+            emotion=EmotionV2Label.LETHARGY,
+            confidence=0.70,
+            margin=0.60,
+            provisional=False,
+            is_uncertain=False,
+            probabilities=v2_probabilities,
+            threshold_version="mvp-v1",
+        ),
+    )
+    db_session.flush()
+
+    v1_read = to_emotion_analysis_read(v1)
+    v2_read = to_emotion_analysis_read(v2)
+
+    assert v1_read.taxonomy_version is EmotionTaxonomyVersion.V1
+    assert v1_read.predicted_emotion is EmotionLabel.HURT
+    assert v1_read.emotion is EmotionLabel.HURT
+    assert v2_read.taxonomy_version is EmotionTaxonomyVersion.V2
+    assert v2_read.predicted_emotion is EmotionV2Label.LETHARGY
+    assert v2_read.emotion is EmotionV2Label.LETHARGY
+    assert [item.id for item in list_emotion_results(db_session, user_id=user.id)] == [
+        v2.id,
+        v1.id,
+    ]
 
 
 def test_latest_emotion_by_date_is_scoped_and_deterministic(

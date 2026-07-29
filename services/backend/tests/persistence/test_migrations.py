@@ -94,16 +94,30 @@ def test_persistence_migration_schema(database_url: str) -> None:
         assert emotion_columns == {
             "id",
             "user_id",
-            "record_date",
-            "analyzed_at",
-            "model_version",
-            "predicted_emotion",
-            "confidence",
-            "is_uncertain",
-            "probabilities",
-            "input_hash",
-            "created_at",
+                "record_date",
+                "analyzed_at",
+                "taxonomy_version",
+                "model_version",
+                "predicted_emotion",
+                "emotion",
+                "confidence",
+                "margin",
+                "provisional",
+                "is_uncertain",
+                "probabilities",
+                "threshold_version",
+                "input_hash",
+                "created_at",
+            }
+        emotion_checks = {
+            item["name"]: " ".join(item["sqltext"].split())
+            for item in inspector.get_check_constraints(
+                "emotion_analysis_results"
+            )
         }
+        assert "무기력" in emotion_checks["ck_emotion_taxonomy_payload"]
+        assert "상처" in emotion_checks["ck_emotion_taxonomy_payload"]
+        assert "margin >= 0 AND margin <= 1" in emotion_checks["ck_emotion_margin"]
         unique_constraints = inspector.get_unique_constraints(
             "behavioral_daily_records"
         )
@@ -563,6 +577,147 @@ def test_0004_downgrade_preserves_compatible_baseline_fatigue(
         engine.dispose()
 
 
+def test_0006_backfills_existing_emotion_rows_as_v1(
+    database_url: str,
+) -> None:
+    config = make_alembic_config(database_url)
+    command.upgrade(config, "20260729_0005")
+    engine = create_database_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, hashed_password) "
+                    "VALUES (:id, :email, :hashed_password)"
+                ),
+                {
+                    "id": "emotion-v1-user",
+                    "email": "emotion-v1@example.com",
+                    "hashed_password": "emotion-v1-password-hash",
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO emotion_analysis_results "
+                    "(id, user_id, analyzed_at, model_version, "
+                    "predicted_emotion, confidence, is_uncertain, "
+                    "probabilities) "
+                    "VALUES (:id, :user_id, :analyzed_at, :model_version, "
+                    ":predicted_emotion, :confidence, :is_uncertain, "
+                    ":probabilities)"
+                ),
+                {
+                    "id": "emotion-v1-row",
+                    "user_id": "emotion-v1-user",
+                    "analyzed_at": "2026-07-20 09:00:00",
+                    "model_version": "legacy-v1",
+                    "predicted_emotion": "상처",
+                    "confidence": 0.8,
+                    "is_uncertain": 1,
+                    "probabilities": (
+                        '{"기쁨":0.05,"불안":0.05,"당황":0.05,'
+                        '"분노":0.05,"슬픔":0.1,"상처":0.7}'
+                    ),
+                },
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(config, "head")
+
+    engine = create_database_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    "SELECT taxonomy_version, predicted_emotion, emotion, "
+                    "margin, provisional, threshold_version "
+                    "FROM emotion_analysis_results "
+                    "WHERE id = 'emotion-v1-row'"
+                )
+            ).one()
+        assert tuple(row) == ("v1", "상처", "상처", None, 0, None)
+    finally:
+        engine.dispose()
+
+
+def test_0006_downgrade_rejects_v2_provenance(
+    database_url: str,
+) -> None:
+    config = make_alembic_config(database_url)
+    command.upgrade(config, "head")
+    engine = create_database_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, hashed_password) "
+                    "VALUES (:id, :email, :hashed_password)"
+                ),
+                {
+                    "id": "emotion-v2-user",
+                    "email": "emotion-v2@example.com",
+                    "hashed_password": "emotion-v2-password-hash",
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO emotion_analysis_results "
+                    "(id, user_id, analyzed_at, taxonomy_version, "
+                    "model_version, predicted_emotion, emotion, confidence, "
+                    "margin, provisional, is_uncertain, probabilities, "
+                    "threshold_version) "
+                    "VALUES (:id, :user_id, :analyzed_at, :taxonomy_version, "
+                    ":model_version, :predicted_emotion, :emotion, "
+                    ":confidence, :margin, :provisional, :is_uncertain, "
+                    ":probabilities, :threshold_version)"
+                ),
+                {
+                    "id": "emotion-v2-row",
+                    "user_id": "emotion-v2-user",
+                    "analyzed_at": "2026-07-20 09:00:00",
+                    "taxonomy_version": "v2",
+                    "model_version": "coarse-v2",
+                    "predicted_emotion": "불안",
+                    "emotion": None,
+                    "confidence": 0.4,
+                    "margin": 0.05,
+                    "provisional": 1,
+                    "is_uncertain": 1,
+                    "probabilities": (
+                        '{"분노":0.05,"기쁨":0.05,"불안":0.4,'
+                        '"당황":0.05,"슬픔":0.35,"무기력":0.1}'
+                    ),
+                    "threshold_version": "mvp-v1",
+                },
+            )
+    finally:
+        engine.dispose()
+
+    with pytest.raises(RuntimeError, match="Emotion Taxonomy v2"):
+        command.downgrade(config, "20260729_0005")
+
+    engine = create_database_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "20260729_0006"
+            )
+            assert (
+                connection.scalar(
+                    text(
+                        "SELECT predicted_emotion "
+                        "FROM emotion_analysis_results "
+                        "WHERE id = 'emotion-v2-row'"
+                    )
+                )
+                == "불안"
+            )
+    finally:
+        engine.dispose()
+
+
 def test_model_metadata_has_persistence_tables() -> None:
     assert EXPECTED_TABLES - {"alembic_version"} <= set(Base.metadata.tables)
 
@@ -594,6 +749,8 @@ def test_postgresql_offline_sql_can_be_rendered() -> None:
     assert "ON DELETE CASCADE" in rendered
     assert "ix_emotion_results_user_record_date_analyzed_at" in rendered
     assert "ix_behavioral_baselines_user_status_window_end" in rendered
+    assert "taxonomy_version" in rendered
+    assert "threshold_version" in rendered
     assert str(Path("20260725_0002_add_behavioral_persistence")) not in rendered
 
 
@@ -618,6 +775,29 @@ def test_postgresql_offline_downgrade_sql_can_be_rendered() -> None:
     assert "DROP INDEX ix_behavioral_baselines_user_status_window_end" in rendered
     assert "DROP INDEX ix_emotion_results_user_record_date_analyzed_at" in rendered
     assert "ALTER TABLE behavioral_baselines" in rendered
+
+
+def test_0006_postgresql_offline_downgrade_sql_can_be_rendered() -> None:
+    output = io.StringIO()
+    config = Config(
+        str(BACKEND_ROOT / "alembic.ini"),
+        output_buffer=output,
+    )
+    config.set_main_option(
+        "sqlalchemy.url",
+        "postgresql+psycopg://user:password@localhost/aigent",
+    )
+
+    command.downgrade(
+        config,
+        "20260729_0006:20260729_0005",
+        sql=True,
+    )
+
+    rendered = output.getvalue()
+    assert "DROP COLUMN threshold_version" in rendered
+    assert "DROP COLUMN taxonomy_version" in rendered
+    assert "ck_emotion_predicted_label" in rendered
 
 
 def test_previous_postgresql_offline_downgrade_sql_can_be_rendered() -> None:

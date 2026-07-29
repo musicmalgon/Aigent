@@ -28,7 +28,10 @@ from app.schemas.emotion_analysis import (
     EmotionAnalysisCreate,
     EmotionAnalysisRead,
 )
-from app.services.emotion_analysis import analyze_and_stage_emotion_result
+from app.services.emotion_analysis import (
+    analyze_and_stage_emotion_result,
+    to_emotion_analysis_read,
+)
 
 router = APIRouter(
     prefix="/api/v1/emotion-analyses",
@@ -116,7 +119,7 @@ async def create_emotion_analysis(
             request=payload.to_ai_request(),
             ai_client=ai_client,
         )
-        response = EmotionAnalysisRead.model_validate(result)
+        response = to_emotion_analysis_read(result)
         db.commit()
     except AIServiceError as exc:
         db.rollback()
@@ -143,7 +146,7 @@ def read_emotion_analyses(
     db: Session = Depends(get_db),
 ) -> list[EmotionAnalysisRead]:
     return [
-        EmotionAnalysisRead.model_validate(result)
+        to_emotion_analysis_read(result)
         for result in list_emotion_results(db, user_id=current_user.id)
     ]
 
@@ -159,7 +162,7 @@ def read_latest_emotion_analysis(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No emotion analysis results found.",
         )
-    return EmotionAnalysisRead.model_validate(result)
+    return to_emotion_analysis_read(result)
 
 
 @router.get("/{result_id}", response_model=EmotionAnalysisRead)
@@ -178,7 +181,7 @@ def read_emotion_analysis(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Emotion analysis result not found.",
         )
-    return EmotionAnalysisRead.model_validate(result)
+    return to_emotion_analysis_read(result)
 
 
 __all__ = ["router"]

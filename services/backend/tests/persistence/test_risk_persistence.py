@@ -16,11 +16,17 @@ from app.models.persistence import (
 )
 from app.models.user import User
 from app.repositories import PersistenceScopeError
+from app.repositories.emotion_results import create_emotion_result
 from app.repositories.risk_evaluations import (
     get_latest_dated_risk_evaluation,
     get_latest_risk_evaluation,
     list_dated_risk_evaluations,
     list_risk_evaluations,
+)
+from app.schemas.persistence import (
+    EmotionResultCreate,
+    EmotionTaxonomyVersion,
+    EmotionV2Label,
 )
 from app.services.risk_adapter import build_risk_request
 from app.services.risk_evaluation import evaluate_and_store
@@ -99,6 +105,76 @@ def test_adapter_preserves_signals_and_full_emotion_distribution(
     assert len(request.current.emotion_probabilities.as_tuple()) == 6
     assert request.baseline is not None
     assert request.baseline.sample_days == 14
+
+
+@pytest.mark.parametrize("provisional", [False, True])
+def test_adapter_applies_v2_abstention_without_losing_provenance(
+    db_session: Session,
+    user: User,
+    provisional: bool,
+) -> None:
+    current_date = date(2026, 7, 20)
+    daily = daily_record(
+        db_session,
+        user_id=user.id,
+        record_date=current_date,
+    )
+    probabilities = {
+        EmotionV2Label.ANGER: 0.06,
+        EmotionV2Label.JOY: 0.06,
+        EmotionV2Label.ANXIETY: 0.70,
+        EmotionV2Label.EMBARRASSMENT: 0.06,
+        EmotionV2Label.SADNESS: 0.06,
+        EmotionV2Label.LETHARGY: 0.06,
+    }
+    emotion = create_emotion_result(
+        db_session,
+        user_id=user.id,
+        payload=EmotionResultCreate(
+            record_date=current_date,
+            taxonomy_version=EmotionTaxonomyVersion.V2,
+            model_version="coarse-v2-test",
+            predicted_emotion=EmotionV2Label.ANXIETY,
+            emotion=None if provisional else EmotionV2Label.ANXIETY,
+            confidence=0.70,
+            margin=0.64,
+            provisional=provisional,
+            is_uncertain=provisional,
+            probabilities=probabilities,
+            threshold_version="mvp-v1",
+        ),
+    )
+    ready_baseline = baseline(
+        db_session,
+        user_id=user.id,
+        window_end=current_date - timedelta(days=1),
+    )
+
+    request = build_risk_request(
+        user_id=user.id,
+        daily_record=daily,
+        emotion_result=emotion,
+        baseline=ready_baseline,
+    )
+
+    if provisional:
+        assert request.current.emotion_probabilities is None
+        assert request.current.emotion_confidence is None
+        assert request.current.emotion_uncertain is None
+    else:
+        assert request.current.emotion_probabilities is not None
+        assert request.current.emotion_probabilities.lethargy == 0.06
+        assert request.current.emotion_confidence == 0.70
+        assert request.current.emotion_uncertain is False
+
+    evaluation, _ = evaluate_and_store(
+        db_session,
+        user_id=user.id,
+        daily_record=daily,
+        emotion_result=emotion,
+        baseline=ready_baseline,
+    )
+    assert evaluation.emotion_analysis_result_id == emotion.id
 
 
 def test_adapter_handles_insufficient_and_missing_baseline(

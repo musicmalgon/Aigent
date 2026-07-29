@@ -19,7 +19,7 @@ The independently versioned Re:Mind v2 taxonomy uses:
 
 Its fixed model-index order is `분노`, `기쁨`, `불안`, `당황`, `슬픔`,
 `무기력`, and every response includes
-`label_schema_version=remind-coarse-v2`. The v1 contracts below remain frozen
+`taxonomy_version=v2`. The v1 contracts below remain frozen
 for existing persistence history.
 
 The six coarse labels have a fixed model-index order:

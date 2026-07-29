@@ -122,8 +122,8 @@ Example request:
 The response preserves the raw `predicted_emotion` and label id, and separately
 returns nullable `emotion` for product use. `emotion` is null and
 `provisional=true` unless both configured thresholds pass. It also includes
-the top-one/top-two `margin`, `threshold_version`, all six probabilities,
-ranked top predictions, model version, and latency.
+`taxonomy_version=v2`, the top-one/top-two `margin`, `threshold_version`, all
+six probabilities, ranked top predictions, model version, and latency.
 Probabilities are normalized and keyed by the fixed labels above.
 
 `is_uncertain` and `provisional` are true when confidence is below the

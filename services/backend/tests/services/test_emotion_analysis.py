@@ -19,7 +19,11 @@ from app.clients.ai import (
 )
 from app.models.persistence import EmotionAnalysisResult
 from app.repositories import emotion_results
-from app.schemas.persistence import EmotionLabel, EmotionResultCreate
+from app.schemas.persistence import (
+    EmotionResultCreate,
+    EmotionTaxonomyVersion,
+    EmotionV2Label,
+)
 from app.services.emotion_analysis import (
     analyze_and_stage_emotion_result,
     map_ai_response_to_persistence,
@@ -39,15 +43,20 @@ def ai_response() -> CoarseEmotionResponse:
         CoarseEmotionLabel.EMBARRASSMENT: 0.12,
         CoarseEmotionLabel.ANGER: 0.08,
         CoarseEmotionLabel.SADNESS: 0.11,
-        CoarseEmotionLabel.HURT: 0.09,
+        CoarseEmotionLabel.LETHARGY: 0.09,
     }
     return CoarseEmotionResponse(
-        model_version="coarse-v1",
+        taxonomy_version="v2",
+        model_version="coarse-v2",
+        threshold_version="mvp-v1",
         predicted_emotion=CoarseEmotionLabel.ANXIETY,
-        predicted_label_id=1,
+        predicted_label_id=2,
+        emotion=None,
         confidence=0.55,
+        margin=0.43,
+        provisional=True,
         is_uncertain=True,
-        uncertainty_reason=UncertaintyReason.SMALL_MARGIN,
+        uncertainty_reason=UncertaintyReason.LOW_CONFIDENCE,
         probabilities=probabilities,
         top_predictions=[
             CoarseEmotionTopPrediction(
@@ -98,12 +107,17 @@ def test_mapping_contains_only_persistence_fields() -> None:
 
     assert payload.record_date == record_date
     assert payload.model_version == response.model_version
-    assert payload.predicted_emotion is EmotionLabel.ANXIETY
+    assert payload.taxonomy_version is EmotionTaxonomyVersion.V2
+    assert payload.predicted_emotion is EmotionV2Label.ANXIETY
+    assert payload.emotion is None
     assert payload.confidence == response.confidence
+    assert payload.margin == response.margin
+    assert payload.provisional is True
+    assert payload.threshold_version == "mvp-v1"
     assert payload.is_uncertain is True
     assert payload.input_hash is None
     assert payload.analyzed_at.utcoffset() is not None
-    assert set(payload.probabilities) == set(EmotionLabel)
+    assert set(payload.probabilities) == set(EmotionV2Label)
     assert {
         label.value: probability
         for label, probability in payload.probabilities.items()
@@ -196,7 +210,7 @@ def test_ai_failure_does_not_call_repository(
     fake_client = FakeAIClient(
         error=AIServiceConnectionError(
             "AI service connection failed",
-            endpoint="v1/emotions/classify",
+            endpoint="v2/emotions/classify",
             error_code="downstream_connection_failure",
         )
     )

@@ -26,7 +26,7 @@ def _response() -> RemindCoarseEmotionInferenceResponse:
         RemindCoarseEmotionLabel.LETHARGY: 0.05,
     }
     return RemindCoarseEmotionInferenceResponse(
-        label_schema_version="remind-coarse-v2",
+        taxonomy_version="v2",
         model_version="synthetic-coarse-v2",
         threshold_version="mvp-v1",
         predicted_emotion=RemindCoarseEmotionLabel.ANXIETY,
@@ -109,7 +109,7 @@ def test_endpoint_success_and_model_is_loaded_once() -> None:
     assert payload["emotion"] == "불안"
     assert payload["provisional"] is False
     assert payload["margin"] == 0.6
-    assert payload["label_schema_version"] == "remind-coarse-v2"
+    assert payload["taxonomy_version"] == "v2"
     assert payload["threshold_version"] == "mvp-v1"
     assert len(payload["probabilities"]) == 6
     assert sum(payload["probabilities"].values()) == 1.0

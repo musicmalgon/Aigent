@@ -39,7 +39,7 @@ def ai_response() -> CoarseEmotionResponse:
         CoarseEmotionLabel.EMBARRASSMENT: 0.12,
         CoarseEmotionLabel.ANGER: 0.08,
         CoarseEmotionLabel.SADNESS: 0.11,
-        CoarseEmotionLabel.HURT: 0.09,
+        CoarseEmotionLabel.LETHARGY: 0.09,
     }
     return CoarseEmotionResponse(
         model_version="coarse-v1",

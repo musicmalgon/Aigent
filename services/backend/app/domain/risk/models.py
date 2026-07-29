@@ -121,7 +121,7 @@ class EmotionProbabilities(_ContractModel):
     embarrassment: Probability = Field(alias="당황")
     anger: Probability = Field(alias="분노")
     sadness: Probability = Field(alias="슬픔")
-    hurt: Probability = Field(alias="상처")
+    lethargy: Probability = Field(alias="무기력")
 
     @model_validator(mode="after")
     def validate_probability_sum(self) -> EmotionProbabilities:
@@ -136,7 +136,7 @@ class EmotionProbabilities(_ContractModel):
             self.embarrassment,
             self.anger,
             self.sadness,
-            self.hurt,
+            self.lethargy,
         )
 
     @property

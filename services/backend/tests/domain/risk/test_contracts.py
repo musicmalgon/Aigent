@@ -64,7 +64,7 @@ def test_request_without_optional_emotion_metadata_matches_contract() -> None:
                     "당황": 0.1,
                     "분노": 0.1,
                     "슬픔": 0.1,
-                    "상처": 0.1,
+                    "무기력": 0.1,
                 }
             )
         )
@@ -140,7 +140,7 @@ def test_engine_response_validates_against_response_contract() -> None:
                 "당황": 0.11,
                 "분노": 0.08,
                 "슬픔": 0.25,
-                "상처": 0.11,
+                "무기력": 0.11,
             }
         ),
         emotion_confidence=0.42,

@@ -56,7 +56,7 @@
         "당황",
         "분노",
         "슬픔",
-        "상처"
+        "무기력"
       ],
       "properties": {
         "기쁨": { "$ref": "#/$defs/probability" },
@@ -64,7 +64,7 @@
         "당황": { "$ref": "#/$defs/probability" },
         "분노": { "$ref": "#/$defs/probability" },
         "슬픔": { "$ref": "#/$defs/probability" },
-        "상처": { "$ref": "#/$defs/probability" }
+        "무기력": { "$ref": "#/$defs/probability" }
       }
     },
     "top_predictions": {
@@ -103,7 +103,7 @@
       "then": { "properties": { "predicted_label_id": { "const": 4 } } }
     },
     {
-      "if": { "properties": { "predicted_emotion": { "const": "상처" } }, "required": ["predicted_emotion"] },
+      "if": { "properties": { "predicted_emotion": { "const": "무기력" } }, "required": ["predicted_emotion"] },
       "then": { "properties": { "predicted_label_id": { "const": 5 } } }
     },
     {
@@ -124,7 +124,7 @@
         "당황",
         "분노",
         "슬픔",
-        "상처"
+        "무기력"
       ]
     },
     "probability": {
@@ -183,7 +183,7 @@
           "then": { "properties": { "label_id": { "const": 4 } } }
         },
         {
-          "if": { "properties": { "emotion": { "const": "상처" } }, "required": ["emotion"] },
+          "if": { "properties": { "emotion": { "const": "무기력" } }, "required": ["emotion"] },
           "then": { "properties": { "label_id": { "const": 5 } } }
         }
       ]
@@ -203,7 +203,7 @@
         "당황": 0.14,
         "분노": 0.08,
         "슬픔": 0.13,
-        "상처": 0.08
+        "무기력": 0.08
       },
       "top_predictions": [
         {

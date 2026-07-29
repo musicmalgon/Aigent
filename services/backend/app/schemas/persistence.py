@@ -31,7 +31,7 @@ class EmotionLabel(StrEnum):
     EMBARRASSMENT = "당황"
     ANGER = "분노"
     SADNESS = "슬픔"
-    HURT = "상처"
+    LETHARGY = "무기력"
 
 
 class PersistenceSchema(BaseModel):

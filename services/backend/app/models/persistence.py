@@ -190,7 +190,7 @@ class EmotionAnalysisResult(Base):
         ),
         CheckConstraint(
             "predicted_emotion IN "
-            "('기쁨', '불안', '당황', '분노', '슬픔', '상처')",
+            "('기쁨', '불안', '당황', '분노', '슬픔', '무기력')",
             name="ck_emotion_predicted_label",
         ),
         Index(

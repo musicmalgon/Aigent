@@ -182,7 +182,7 @@ def test_json_storage_rejects_nan_even_when_orm_is_used_directly(
             "당황": 0.2,
             "분노": 0.2,
             "슬픔": 0.2,
-            "상처": 0.2,
+            "무기력": 0.2,
         },
     )
     db_session.add(invalid)

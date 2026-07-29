@@ -74,7 +74,7 @@ def valid_response_payload() -> dict[str, Any]:
             "당황": 0.14,
             "분노": 0.08,
             "슬픔": 0.13,
-            "상처": 0.08,
+            "무기력": 0.08,
         },
         "top_predictions": [
             {"emotion": "불안", "label_id": 1, "probability": 0.54},
@@ -286,11 +286,11 @@ def invalid_response_cases() -> list[tuple[str, dict[str, Any]]]:
 
     unknown_class = valid_response_payload()
     unknown_class["probabilities"]["놀람"] = unknown_class["probabilities"].pop(
-        "상처"
+        "무기력"
     )
 
     missing_class = valid_response_payload()
-    missing_class["probabilities"].pop("상처")
+    missing_class["probabilities"].pop("무기력")
 
     out_of_range = valid_response_payload()
     out_of_range["probabilities"]["기쁨"] = 1.1

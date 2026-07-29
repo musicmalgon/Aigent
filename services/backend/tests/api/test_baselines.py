@@ -84,9 +84,9 @@ def emotion_probabilities(
         EmotionLabel.EMBARRASSMENT: remaining,
         EmotionLabel.ANGER: remaining,
         EmotionLabel.SADNESS: remaining,
-        EmotionLabel.HURT: remaining,
+        EmotionLabel.LETHARGY: remaining,
     }
-    values[EmotionLabel.HURT] += 1.0 - sum(values.values())
+    values[EmotionLabel.LETHARGY] += 1.0 - sum(values.values())
     return values
 
 

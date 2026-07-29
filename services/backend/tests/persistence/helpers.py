@@ -29,10 +29,10 @@ def probabilities(
         EmotionLabel.EMBARRASSMENT: remaining,
         EmotionLabel.ANGER: remaining,
         EmotionLabel.SADNESS: remaining,
-        EmotionLabel.HURT: remaining,
+        EmotionLabel.LETHARGY: remaining,
     }
     difference = 1.0 - sum(values.values())
-    values[EmotionLabel.HURT] += difference
+    values[EmotionLabel.LETHARGY] += difference
     return values
 
 

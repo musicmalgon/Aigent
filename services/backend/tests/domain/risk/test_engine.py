@@ -34,7 +34,7 @@ def probabilities(joy: float = 0.5) -> EmotionProbabilities:
             "당황": remaining,
             "분노": remaining,
             "슬픔": remaining,
-            "상처": remaining,
+            "무기력": remaining,
         }
     )
 
@@ -358,7 +358,7 @@ def test_missing_categories_are_omitted_and_weights_are_renormalized() -> None:
             "당황": 0.1,
             "분노": 0.1,
             "슬픔": 0.1,
-            "상처": 0.2,
+            "무기력": 0.2,
         },
         {
             "기쁨": 0.5,
@@ -381,7 +381,7 @@ def test_missing_categories_are_omitted_and_weights_are_renormalized() -> None:
             "당황": 0.2,
             "분노": 0.2,
             "슬픔": 0.2,
-            "상처": 0.2,
+            "무기력": 0.2,
         },
         {
             "기쁨": float("nan"),
@@ -389,7 +389,7 @@ def test_missing_categories_are_omitted_and_weights_are_renormalized() -> None:
             "당황": 0.2,
             "분노": 0.2,
             "슬픔": 0.2,
-            "상처": 0.2,
+            "무기력": 0.2,
         },
         {
             "기쁨": float("inf"),
@@ -397,7 +397,7 @@ def test_missing_categories_are_omitted_and_weights_are_renormalized() -> None:
             "당황": 0,
             "분노": 0,
             "슬픔": 0,
-            "상처": 0,
+            "무기력": 0,
         },
     ],
 )

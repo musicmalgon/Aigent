@@ -62,7 +62,7 @@ class CoarseEmotionLabel(StrEnum):
     EMBARRASSMENT = "당황"
     ANGER = "분노"
     SADNESS = "슬픔"
-    HURT = "상처"
+    LETHARGY = "무기력"
 
 
 COARSE_EMOTION_LABELS = tuple(CoarseEmotionLabel)

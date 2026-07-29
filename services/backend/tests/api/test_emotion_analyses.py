@@ -46,7 +46,7 @@ def valid_ai_payload(
         CoarseEmotionLabel.EMBARRASSMENT: 0.12,
         CoarseEmotionLabel.ANGER: 0.08,
         CoarseEmotionLabel.SADNESS: 0.11,
-        CoarseEmotionLabel.HURT: 0.09,
+        CoarseEmotionLabel.LETHARGY: 0.09,
     }
     labels = list(CoarseEmotionLabel)
     ordered = sorted(
@@ -469,7 +469,7 @@ def test_repeated_analysis_is_append_only_and_baseline_uses_latest(
                 CoarseEmotionLabel.EMBARRASSMENT: 0.04,
                 CoarseEmotionLabel.ANGER: 0.04,
                 CoarseEmotionLabel.SADNESS: 0.04,
-                CoarseEmotionLabel.HURT: 0.03,
+                CoarseEmotionLabel.LETHARGY: 0.03,
             }
         ),
         valid_ai_payload(
@@ -479,7 +479,7 @@ def test_repeated_analysis_is_append_only_and_baseline_uses_latest(
                 CoarseEmotionLabel.EMBARRASSMENT: 0.1,
                 CoarseEmotionLabel.ANGER: 0.1,
                 CoarseEmotionLabel.SADNESS: 0.08,
-                CoarseEmotionLabel.HURT: 0.07,
+                CoarseEmotionLabel.LETHARGY: 0.07,
             }
         ),
     ]

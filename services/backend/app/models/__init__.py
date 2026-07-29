@@ -1,4 +1,5 @@
 from app.models.assessment import AssessmentAnchor, AssessmentType, InterpretationScope
+from app.models.consent import ConsentRecord, ConsentStatus, ConsentType
 from app.models.persistence import (
     BehavioralBaseline,
     BehavioralDailyRecord,
@@ -13,6 +14,9 @@ __all__ = [
     "AssessmentAnchor",
     "AssessmentType",
     "InterpretationScope",
+    "ConsentRecord",
+    "ConsentStatus",
+    "ConsentType",
     "BehavioralBaseline",
     "BehavioralDailyRecord",
     "BurnoutRiskEvaluation",

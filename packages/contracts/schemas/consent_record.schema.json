@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "consent_record.schema.json",
+  "title": "ConsentRecord",
+  "description": "건강정보와 감정일기 분석에 대한 개별 동의 기록. 각 동의/철회 행위마다 새 레코드가 추가되며 최신 레코드가 현재 상태다.",
+  "$comment": "examples의 모든 값은 스키마 검증용 합성 데이터이며 실제 사용자 동의를 나타내지 않는다. 동의 항목은 서로 독립적이며 하나의 동의가 다른 항목을 대신하지 않는다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "consent_type",
+    "status",
+    "granted_at",
+    "source"
+  ],
+  "properties": {
+    "consent_type": {
+      "$ref": "#/$defs/consentType"
+    },
+    "status": {
+      "$ref": "#/$defs/consentStatus"
+    },
+    "granted_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "UTC Z 또는 명시적 UTC 오프셋을 포함하는 ISO 8601 일시. 철회 레코드에서도 원래 동의 시각을 그대로 보존한다."
+    },
+    "withdrawn_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "pattern": "(?:Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "UTC Z 또는 명시적 UTC 오프셋을 포함하는 ISO 8601 일시. status가 granted이면 null이다."
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    }
+  },
+  "$defs": {
+    "consentType": {
+      "type": "string",
+      "enum": [
+        "health_data",
+        "emotion_diary"
+      ]
+    },
+    "consentStatus": {
+      "type": "string",
+      "enum": [
+        "granted",
+        "withdrawn"
+      ]
+    }
+  },
+  "examples": [
+    {
+      "consent_type": "health_data",
+      "status": "granted",
+      "granted_at": "2026-01-01T09:00:00+09:00",
+      "withdrawn_at": null,
+      "source": "synthetic_foundation_example"
+    },
+    {
+      "consent_type": "emotion_diary",
+      "status": "withdrawn",
+      "granted_at": "2026-01-01T09:00:00+09:00",
+      "withdrawn_at": "2026-02-01T09:00:00+09:00",
+      "source": "synthetic_foundation_example"
+    }
+  ]
+}

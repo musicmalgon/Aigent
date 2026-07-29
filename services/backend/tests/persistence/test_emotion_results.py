@@ -13,6 +13,7 @@ from app.repositories.emotion_results import (
     create_emotion_result,
     get_emotion_result,
     get_latest_emotion_result,
+    get_latest_emotion_result_by_date,
     list_emotion_results,
 )
 from app.schemas.persistence import EmotionLabel, EmotionResultCreate
@@ -67,6 +68,70 @@ def test_create_latest_list_and_scope(
         is None
     )
     assert latest.input_hash == "sha256-like-irreversible-hash"
+
+
+def test_latest_emotion_by_date_is_scoped_and_deterministic(
+    db_session: Session,
+    user: User,
+    other_user: User,
+) -> None:
+    target_date = date(2026, 7, 20)
+    analyzed_at = datetime(2026, 7, 20, 9, tzinfo=UTC)
+    created_at = analyzed_at + timedelta(minutes=1)
+    first = create_emotion_result(
+        db_session,
+        user_id=user.id,
+        payload=payload(analyzed_at=analyzed_at),
+    )
+    second = create_emotion_result(
+        db_session,
+        user_id=user.id,
+        payload=payload(analyzed_at=analyzed_at),
+    )
+    for result in (first, second):
+        result.created_at = created_at
+
+    different_date = create_emotion_result(
+        db_session,
+        user_id=user.id,
+        payload=payload(analyzed_at=analyzed_at + timedelta(hours=3)).model_copy(
+            update={"record_date": target_date + timedelta(days=1)}
+        ),
+    )
+    undated = create_emotion_result(
+        db_session,
+        user_id=user.id,
+        payload=payload(analyzed_at=analyzed_at + timedelta(hours=4)).model_copy(
+            update={"record_date": None}
+        ),
+    )
+    other = create_emotion_result(
+        db_session,
+        user_id=other_user.id,
+        payload=payload(analyzed_at=analyzed_at + timedelta(hours=5)),
+    )
+    db_session.flush()
+
+    expected = max((first, second), key=lambda result: result.id)
+    assert (
+        get_latest_emotion_result_by_date(
+            db_session,
+            user_id=user.id,
+            record_date=target_date,
+        )
+        is expected
+    )
+    assert (
+        get_latest_emotion_result_by_date(
+            db_session,
+            user_id=user.id,
+            record_date=target_date + timedelta(days=2),
+        )
+        is None
+    )
+    assert different_date.record_date != target_date
+    assert undated.record_date is None
+    assert other.user_id != user.id
 
 
 @pytest.mark.parametrize(

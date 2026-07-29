@@ -52,12 +52,26 @@ def daily_record(
     schedule_count: int | None = 4,
     subjective_stress: float | None = 5,
     subjective_fatigue: float | None = 5,
+    timezone: str = "UTC",
 ) -> BehavioralDailyRecord:
+    contract_values = {
+        "sleep_minutes": sleep_minutes,
+        "bedtime": bedtime,
+        "wake_time": wake_time,
+        "steps": steps,
+        "active_minutes": active_minutes,
+        "exercise_minutes": exercise_minutes,
+        "work_or_study_minutes": study_work_minutes,
+        "rest_minutes": rest_minutes,
+        "schedule_count": schedule_count,
+        "subjective_fatigue": subjective_fatigue,
+    }
     return create_daily_record(
         session,
         user_id=user_id,
         payload=DailyRecordPersistenceCreate(
             record_date=record_date,
+            timezone=timezone,
             sleep_minutes=sleep_minutes,
             bedtime=bedtime,
             wake_time=wake_time,
@@ -69,8 +83,22 @@ def daily_record(
             schedule_count=schedule_count,
             subjective_stress=subjective_stress,
             subjective_fatigue=subjective_fatigue,
-            source_by_field={field: "manual" for field in METRIC_FIELDS},
-            coverage_by_field={field: "complete" for field in METRIC_FIELDS},
+            source_by_field={
+                field: (
+                    "manual"
+                    if contract_values[field] is not None
+                    else "not_provided"
+                )
+                for field in METRIC_FIELDS
+            },
+            coverage_by_field={
+                field: (
+                    "complete"
+                    if contract_values[field] is not None
+                    else "unavailable"
+                )
+                for field in METRIC_FIELDS
+            },
         ),
     )
 

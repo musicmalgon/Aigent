@@ -15,6 +15,7 @@ from app.api import (
     behavioral_records,
     consents,
     emotion_analyses,
+    risk_evaluations,
     users,
 )
 from app.clients.ai import AIServiceClient, create_ai_service_client
@@ -86,6 +87,7 @@ def create_app(
     application.include_router(behavioral_records.router)
     application.include_router(emotion_analyses.router)
     application.include_router(baselines.router)
+    application.include_router(risk_evaluations.router)
     application.include_router(consents.router)
     application.include_router(assessments.router, tags=["assessments"])
 

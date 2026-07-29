@@ -25,13 +25,15 @@ def get_baseline(
     *,
     user_id: str,
     baseline_id: str,
+    for_update: bool = False,
 ) -> BehavioralBaseline | None:
-    return session.scalar(
-        select(BehavioralBaseline).where(
-            BehavioralBaseline.id == baseline_id,
-            BehavioralBaseline.user_id == user_id,
-        )
+    statement = select(BehavioralBaseline).where(
+        BehavioralBaseline.id == baseline_id,
+        BehavioralBaseline.user_id == user_id,
     )
+    if for_update:
+        statement = statement.with_for_update()
+    return session.scalar(statement)
 
 
 def get_latest_ready_baseline(
@@ -53,6 +55,30 @@ def get_latest_ready_baseline(
     )
 
 
+def get_latest_ready_baseline_before(
+    session: Session,
+    *,
+    user_id: str,
+    evaluation_date: date,
+    minimum_sample_days: int = 7,
+) -> BehavioralBaseline | None:
+    return session.scalar(
+        select(BehavioralBaseline)
+        .where(
+            BehavioralBaseline.user_id == user_id,
+            BehavioralBaseline.status == PersistenceBaselineStatus.READY,
+            BehavioralBaseline.sample_days >= minimum_sample_days,
+            BehavioralBaseline.window_end < evaluation_date,
+        )
+        .order_by(
+            BehavioralBaseline.window_end.desc(),
+            BehavioralBaseline.created_at.desc(),
+            BehavioralBaseline.id.desc(),
+        )
+        .limit(1)
+    )
+
+
 def list_baselines(
     session: Session,
     *,
@@ -63,19 +89,13 @@ def list_baselines(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[BehavioralBaseline]:
-    statement = select(BehavioralBaseline).where(
-        BehavioralBaseline.user_id == user_id
-    )
+    statement = select(BehavioralBaseline).where(BehavioralBaseline.user_id == user_id)
     if status is not None:
         statement = statement.where(BehavioralBaseline.status == status)
     if window_end_from is not None:
-        statement = statement.where(
-            BehavioralBaseline.window_end >= window_end_from
-        )
+        statement = statement.where(BehavioralBaseline.window_end >= window_end_from)
     if window_end_to is not None:
-        statement = statement.where(
-            BehavioralBaseline.window_end <= window_end_to
-        )
+        statement = statement.where(BehavioralBaseline.window_end <= window_end_to)
     statement = statement.order_by(
         BehavioralBaseline.created_at.desc(),
         BehavioralBaseline.id.desc(),
@@ -91,5 +111,6 @@ __all__ = [
     "create_baseline",
     "get_baseline",
     "get_latest_ready_baseline",
+    "get_latest_ready_baseline_before",
     "list_baselines",
 ]

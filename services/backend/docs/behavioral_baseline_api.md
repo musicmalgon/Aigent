@@ -73,9 +73,9 @@ returns `404` when the user has no ready baseline.
 requires `date_from <= date_to`.
 
 The API never accepts a client-supplied `user_id`, status, sample count,
-algorithm version, or aggregate value. A future Risk Evaluation API can use a
-stored baseline ID as provenance, but creation does not automatically execute
-the risk engine.
+algorithm version, or aggregate value. The Risk Evaluation API uses an
+eligible stored baseline ID as provenance, but baseline creation does not
+automatically execute the risk engine.
 
 The response is the stored persistence snapshot represented by
 `BaselineRead`. It is intentionally separate from the shared

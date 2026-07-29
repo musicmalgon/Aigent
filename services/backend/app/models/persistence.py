@@ -198,6 +198,12 @@ class EmotionAnalysisResult(Base):
             "user_id",
             "analyzed_at",
         ),
+        Index(
+            "ix_emotion_results_user_record_date_analyzed_at",
+            "user_id",
+            "record_date",
+            "analyzed_at",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
@@ -276,8 +282,7 @@ class BehavioralBaseline(Base):
             name="ck_baseline_subjective_stress",
         ),
         CheckConstraint(
-            "subjective_fatigue IS NULL OR "
-            "(subjective_fatigue >= 0 AND subjective_fatigue <= 10)",
+            "subjective_fatigue IS NULL OR subjective_fatigue >= 0",
             name="ck_baseline_subjective_fatigue",
         ),
         CheckConstraint(
@@ -293,6 +298,12 @@ class BehavioralBaseline(Base):
         Index(
             "ix_behavioral_baselines_user_window_end",
             "user_id",
+            "window_end",
+        ),
+        Index(
+            "ix_behavioral_baselines_user_status_window_end",
+            "user_id",
+            "status",
             "window_end",
         ),
     )

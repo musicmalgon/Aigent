@@ -151,7 +151,7 @@ class CurrentRiskSignals(_ContractModel):
     exercise_minutes: DayMinutes | None = None
     schedule_count: NonNegativeInteger | None = None
     subjective_stress: SubjectiveRating | None = None
-    subjective_fatigue: SubjectiveRating | None = None
+    subjective_fatigue: NonNegativeNumber | None = None
     emotion_probabilities: EmotionProbabilities | None = None
     emotion_confidence: Probability | None = None
     emotion_uncertain: StrictBool | None = None
@@ -175,7 +175,7 @@ class PersonalBaseline(_ContractModel):
     exercise_minutes: DayMinutes | None = None
     schedule_count: NonNegativeNumber | None = None
     subjective_stress: SubjectiveRating | None = None
-    subjective_fatigue: SubjectiveRating | None = None
+    subjective_fatigue: NonNegativeNumber | None = None
     negative_emotion_probability: Probability | None = None
     sample_days: NonNegativeInteger
 

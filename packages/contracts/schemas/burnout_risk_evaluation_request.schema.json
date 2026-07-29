@@ -154,7 +154,7 @@
         "subjective_fatigue": {
           "oneOf": [
             {
-              "$ref": "#/$defs/subjectiveRating"
+              "$ref": "#/$defs/nonNegativeNumber"
             },
             {
               "type": "null"
@@ -307,7 +307,7 @@
         "subjective_fatigue": {
           "oneOf": [
             {
-              "$ref": "#/$defs/subjectiveRating"
+              "$ref": "#/$defs/nonNegativeNumber"
             },
             {
               "type": "null"

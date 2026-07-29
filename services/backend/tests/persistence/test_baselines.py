@@ -5,10 +5,11 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 from sqlalchemy.orm import Session
 
-from app.models.persistence import PersistenceBaselineStatus
+from app.models.persistence import BehavioralBaseline, PersistenceBaselineStatus
 from app.models.user import User
 from app.repositories.baselines import (
     get_latest_ready_baseline,
+    get_latest_ready_baseline_before,
     list_baselines,
 )
 from app.services.baselines import (
@@ -18,6 +19,29 @@ from app.services.baselines import (
 )
 
 from .helpers import daily_record, emotion_result
+
+
+def stored_baseline(
+    session: Session,
+    *,
+    user_id: str,
+    window_end: date,
+    sample_days: int = 7,
+    status: PersistenceBaselineStatus = PersistenceBaselineStatus.READY,
+    created_at: datetime | None = None,
+) -> BehavioralBaseline:
+    item = BehavioralBaseline(
+        user_id=user_id,
+        window_start=window_end - timedelta(days=13),
+        window_end=window_end,
+        sample_days=sample_days,
+        status=status,
+        algorithm_version="behavioral-baseline-test-v1",
+        created_at=created_at or datetime.now(UTC),
+    )
+    session.add(item)
+    session.flush()
+    return item
 
 
 def test_fourteen_day_mean_missing_denominators_and_emotion(
@@ -88,6 +112,78 @@ def test_six_days_produces_insufficient_baseline(
     assert baseline.status is PersistenceBaselineStatus.INSUFFICIENT
     assert get_latest_ready_baseline(db_session, user_id=user.id) is None
     assert list_baselines(db_session, user_id=user.id) == [baseline]
+
+
+def test_latest_ready_baseline_before_prevents_future_data_leakage(
+    db_session: Session,
+    user: User,
+    other_user: User,
+) -> None:
+    evaluation_date = date(2026, 7, 20)
+    created_at = datetime(2026, 7, 19, 12, tzinfo=UTC)
+    stored_baseline(
+        db_session,
+        user_id=user.id,
+        window_end=evaluation_date - timedelta(days=2),
+        created_at=created_at + timedelta(hours=3),
+    )
+    first = stored_baseline(
+        db_session,
+        user_id=user.id,
+        window_end=evaluation_date - timedelta(days=1),
+        created_at=created_at,
+    )
+    second = stored_baseline(
+        db_session,
+        user_id=user.id,
+        window_end=evaluation_date - timedelta(days=1),
+        created_at=created_at,
+    )
+    stored_baseline(
+        db_session,
+        user_id=user.id,
+        window_end=evaluation_date - timedelta(days=1),
+        sample_days=6,
+        created_at=created_at + timedelta(hours=2),
+    )
+    stored_baseline(
+        db_session,
+        user_id=user.id,
+        window_end=evaluation_date - timedelta(days=1),
+        status=PersistenceBaselineStatus.INSUFFICIENT,
+        created_at=created_at + timedelta(hours=2),
+    )
+    stored_baseline(
+        db_session,
+        user_id=user.id,
+        window_end=evaluation_date,
+        created_at=created_at + timedelta(hours=3),
+    )
+    stored_baseline(
+        db_session,
+        user_id=other_user.id,
+        window_end=evaluation_date - timedelta(days=1),
+        created_at=created_at + timedelta(hours=4),
+    )
+
+    expected = max((first, second), key=lambda item: item.id)
+    assert (
+        get_latest_ready_baseline_before(
+            db_session,
+            user_id=user.id,
+            evaluation_date=evaluation_date,
+        )
+        is expected
+    )
+    assert (
+        get_latest_ready_baseline_before(
+            db_session,
+            user_id=user.id,
+            evaluation_date=evaluation_date,
+            minimum_sample_days=8,
+        )
+        is None
+    )
 
 
 def test_latest_emotion_on_same_date_is_used(

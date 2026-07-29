@@ -11,7 +11,8 @@ htmlcov/
 /artifacts/
 data/*
 !data/evaluation/
-!data/evaluation/**
+data/evaluation/*
+!data/evaluation/remind_diary_eval.csv
 !data/synthetic/
 !data/synthetic/**
 !data/raw/
@@ -31,6 +32,15 @@ data/reports/
 *.bin
 predictions*.jsonl
 predictions*.csv
+**/*review_manifest*.json
+**/*review_manifest*.jsonl
+**/*annotation_manifest*.json
+**/*annotation_manifest*.jsonl
+**/split_assignment*.json
+**/split_assignment*.jsonl
+**/prepared_samples*.jsonl
+**/error_analysis*.csv
+**/error_analysis*.jsonl
 **/.cache/
 
 # Raw or locally processed datasets must not be committed.

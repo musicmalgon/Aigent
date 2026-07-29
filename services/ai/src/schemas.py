@@ -7,13 +7,13 @@ not calculate assessment scores or define medical thresholds.
 
 from __future__ import annotations
 
-import re
 import math
+import re
 import unicodedata
 from collections.abc import Mapping
 from datetime import date, time
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import (
     AwareDatetime,
@@ -32,7 +32,7 @@ def _reject_non_json_number(value: object) -> object:
     """Reject values JSON Schema would not consider numeric."""
 
     if isinstance(value, (bool, str, bytes, bytearray)):
-        raise ValueError("numeric fields require JSON number values")
+        raise ValueError("numeric fields require JSON number values")  # noqa: TRY004
     return value
 
 
@@ -166,6 +166,24 @@ COARSE_EMOTION_LABELS = tuple(CoarseEmotionLabel)
 COARSE_EMOTION_LABEL_TO_ID = {
     label: index for index, label in enumerate(COARSE_EMOTION_LABELS)
 }
+
+
+class RemindCoarseEmotionLabel(str, Enum):
+    """The v2 service taxonomy in the model's fixed class-index order."""
+
+    ANGER = "분노"
+    JOY = "기쁨"
+    ANXIETY = "불안"
+    EMBARRASSMENT = "당황"
+    SADNESS = "슬픔"
+    LETHARGY = "무기력"
+
+
+REMIND_COARSE_EMOTION_LABELS = tuple(RemindCoarseEmotionLabel)
+REMIND_COARSE_EMOTION_LABEL_TO_ID = {
+    label: index for index, label in enumerate(REMIND_COARSE_EMOTION_LABELS)
+}
+REMIND_COARSE_EMOTION_SCHEMA_VERSION = "remind-coarse-v2"
 
 
 class UncertaintyReason(str, Enum):
@@ -321,7 +339,7 @@ class BehavioralDailyRecord(_SchemaModel):
         return value
 
     @model_validator(mode="after")
-    def validate_field_metadata(self) -> "BehavioralDailyRecord":
+    def validate_field_metadata(self) -> BehavioralDailyRecord:
         """Keep nullable values consistent with field-level coverage metadata."""
 
         source_fields = set(self.source_by_field)
@@ -382,7 +400,7 @@ class BehavioralBaseline(_SchemaModel):
     calculation_version: NonEmptyString
 
     @model_validator(mode="after")
-    def validate_period_and_sufficiency(self) -> "BehavioralBaseline":
+    def validate_period_and_sufficiency(self) -> BehavioralBaseline:
         if self.baseline_end < self.baseline_start:
             raise ValueError("baseline_end must not precede baseline_start")
 
@@ -479,7 +497,7 @@ class EmotionAnalysis(_SchemaModel):
     model_version: NonEmptyString
 
     @model_validator(mode="after")
-    def validate_labels(self) -> "EmotionAnalysis":
+    def validate_labels(self) -> EmotionAnalysis:
         if len(set(self.secondary_signals)) != len(self.secondary_signals):
             raise ValueError("secondary_signals must not contain duplicates")
         if self.primary_emotion in self.secondary_signals:
@@ -495,7 +513,7 @@ def _normalize_utterance(value: object, *, optional: bool) -> str | None:
     if value is None and optional:
         return None
     if not isinstance(value, str):
-        raise ValueError("utterances must be strings")
+        raise ValueError("utterances must be strings")  # noqa: TRY004
     normalized = re.sub(r"\s+", " ", unicodedata.normalize("NFC", value).strip())
     if not normalized:
         if optional:
@@ -530,7 +548,7 @@ class CoarseEmotionTopPrediction(_SchemaModel):
     probability: Confidence
 
     @model_validator(mode="after")
-    def validate_label_id(self) -> "CoarseEmotionTopPrediction":
+    def validate_label_id(self) -> CoarseEmotionTopPrediction:
         if self.label_id != COARSE_EMOTION_LABEL_TO_ID[self.emotion]:
             raise ValueError("label_id does not match emotion")
         return self
@@ -556,7 +574,7 @@ class CoarseEmotionInferenceResponse(_SchemaModel):
     latency_ms: NonNegativeFloat
 
     @model_validator(mode="after")
-    def validate_prediction_consistency(self) -> "CoarseEmotionInferenceResponse":
+    def validate_prediction_consistency(self) -> CoarseEmotionInferenceResponse:
         if set(self.probabilities) != set(COARSE_EMOTION_LABELS):
             raise ValueError("probabilities must contain exactly the six coarse labels")
         probability_sum = sum(self.probabilities.values())
@@ -599,6 +617,107 @@ class CoarseEmotionInferenceResponse(_SchemaModel):
         return self
 
 
+class RemindCoarseEmotionTopPrediction(_SchemaModel):
+    emotion: RemindCoarseEmotionLabel
+    label_id: Annotated[JsonInteger, Field(ge=0, le=5)]
+    probability: Confidence
+
+    @model_validator(mode="after")
+    def validate_label_id(self) -> RemindCoarseEmotionTopPrediction:
+        if self.label_id != REMIND_COARSE_EMOTION_LABEL_TO_ID[self.emotion]:
+            raise ValueError("label_id does not match emotion")
+        return self
+
+
+class RemindCoarseEmotionInferenceResponse(_SchemaModel):
+    """Non-diagnostic output for the independently versioned v2 taxonomy."""
+
+    label_schema_version: Literal["remind-coarse-v2"]
+    model_version: NonEmptyString
+    threshold_version: NonEmptyString
+    predicted_emotion: RemindCoarseEmotionLabel
+    predicted_label_id: Annotated[JsonInteger, Field(ge=0, le=5)]
+    emotion: RemindCoarseEmotionLabel | None
+    confidence: Confidence
+    margin: Confidence
+    provisional: StrictBool
+    is_uncertain: StrictBool
+    uncertainty_reason: UncertaintyReason | None
+    probabilities: Annotated[
+        dict[RemindCoarseEmotionLabel, Confidence],
+        Field(min_length=6, max_length=6),
+    ]
+    top_predictions: Annotated[
+        list[RemindCoarseEmotionTopPrediction],
+        Field(min_length=1, max_length=6),
+    ]
+    latency_ms: NonNegativeFloat
+
+    @model_validator(mode="after")
+    def validate_prediction_consistency(
+        self,
+    ) -> RemindCoarseEmotionInferenceResponse:
+        if set(self.probabilities) != set(REMIND_COARSE_EMOTION_LABELS):
+            raise ValueError("probabilities must contain exactly the six v2 labels")
+        probability_sum = sum(self.probabilities.values())
+        if not math.isclose(probability_sum, 1.0, rel_tol=0.0, abs_tol=1e-6):
+            raise ValueError("probabilities must sum to one")
+
+        ordered = sorted(
+            self.probabilities.items(),
+            key=lambda item: (
+                -item[1],
+                REMIND_COARSE_EMOTION_LABEL_TO_ID[item[0]],
+            ),
+        )
+        winner, winner_probability = ordered[0]
+        if self.predicted_emotion is not winner:
+            raise ValueError("predicted_emotion must be the maximum probability label")
+        if (
+            self.predicted_label_id
+            != REMIND_COARSE_EMOTION_LABEL_TO_ID[winner]
+        ):
+            raise ValueError("predicted_label_id does not match predicted_emotion")
+        if not math.isclose(
+            self.confidence,
+            winner_probability,
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        ):
+            raise ValueError("confidence must equal the maximum probability")
+        expected_margin = ordered[0][1] - ordered[1][1]
+        if not math.isclose(
+            self.margin,
+            expected_margin,
+            rel_tol=0.0,
+            abs_tol=1e-6,
+        ):
+            raise ValueError("margin must equal the top-one/top-two difference")
+
+        if len({item.emotion for item in self.top_predictions}) != len(
+            self.top_predictions
+        ):
+            raise ValueError("top_predictions must not contain duplicates")
+        for index, prediction in enumerate(self.top_predictions):
+            expected_label, expected_probability = ordered[index]
+            if prediction.emotion is not expected_label or not math.isclose(
+                prediction.probability,
+                expected_probability,
+                rel_tol=0.0,
+                abs_tol=1e-6,
+            ):
+                raise ValueError("top_predictions must be sorted by probability")
+
+        if self.is_uncertain != (self.uncertainty_reason is not None):
+            raise ValueError("uncertainty_reason must match is_uncertain")
+        if self.provisional != self.is_uncertain:
+            raise ValueError("provisional must match is_uncertain")
+        expected_emotion = None if self.provisional else winner
+        if self.emotion is not expected_emotion:
+            raise ValueError("emotion must be null exactly when provisional")
+        return self
+
+
 class PatternFactor(_SchemaModel):
     """One descriptive factor contributing to an observed pattern change."""
 
@@ -620,7 +739,7 @@ class PatternChangeResult(_SchemaModel):
     calculation_version: NonEmptyString
 
     @model_validator(mode="after")
-    def validate_result_state(self) -> "PatternChangeResult":
+    def validate_result_state(self) -> PatternChangeResult:
         if self.data_sufficiency is not DataSufficiency.SUFFICIENT:
             if (
                 self.change_level is not ChangeLevel.UNKNOWN
@@ -664,7 +783,7 @@ class CombinedSignalResult(_SchemaModel):
     rule_version: NonEmptyString
 
     @model_validator(mode="after")
-    def validate_unique_codes_and_signals(self) -> "CombinedSignalResult":
+    def validate_unique_codes_and_signals(self) -> CombinedSignalResult:
         if len(set(self.reason_codes)) != len(self.reason_codes):
             raise ValueError("reason_codes must not contain duplicates")
         if len(set(self.missing_signals)) != len(self.missing_signals):
@@ -776,13 +895,13 @@ __all__ = [
     "CauseTag",
     "ChangeDirection",
     "ChangeLevel",
-    "CombinedLevel",
-    "CombinedResultType",
-    "CombinedSignalResult",
     "CoarseEmotionInferenceResponse",
     "CoarseEmotionInput",
     "CoarseEmotionLabel",
     "CoarseEmotionTopPrediction",
+    "CombinedLevel",
+    "CombinedResultType",
+    "CombinedSignalResult",
     "DataCoverage",
     "DataSource",
     "DataSufficiency",
@@ -794,6 +913,9 @@ __all__ = [
     "PatternChangeResult",
     "PatternFactor",
     "ReasonCode",
+    "RemindCoarseEmotionInferenceResponse",
+    "RemindCoarseEmotionLabel",
+    "RemindCoarseEmotionTopPrediction",
     "SignalType",
     "TargetGroup",
     "UncertaintyReason",

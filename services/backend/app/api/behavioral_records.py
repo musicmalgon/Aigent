@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_consent
 from app.core.database import get_db
+from app.models.consent import ConsentType
 from app.models.persistence import BehavioralDailyRecord
 from app.models.user import User
 from app.repositories import PersistenceConflictError
@@ -115,7 +116,7 @@ def _resolve_date_range(
 )
 def create_behavioral_record(
     payload: DailyRecordCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_consent(ConsentType.HEALTH_DATA)),
     db: Session = Depends(get_db),
 ) -> DailyRecordRead:
     if payload.date > _today_in_timezone(payload.time_zone):
@@ -189,7 +190,7 @@ def read_behavioral_record(
 def update_behavioral_record(
     record_date: date,
     payload: DailyRecordCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_consent(ConsentType.HEALTH_DATA)),
     db: Session = Depends(get_db),
 ) -> DailyRecordRead:
     if payload.date != record_date:

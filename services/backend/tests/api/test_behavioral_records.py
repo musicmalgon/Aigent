@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from collections.abc import Generator
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any, cast
 from unittest.mock import Mock
 
@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.api import behavioral_records as api_module
 from app.core.database import get_db
 from app.core.security import create_access_token, hash_password
+from app.models.consent import ConsentRecord, ConsentStatus, ConsentType
 from app.models.persistence import BehavioralDailyRecord
 from app.models.user import User
 from app.repositories import behavioral_records as repository_module
@@ -26,10 +27,11 @@ from tests.daily_record_contract import (
 )
 
 BASE_PATH = "/api/v1/behavioral-records"
+CONSENTS_PATH = "/api/v1/consents"
 PASSWORD = "correct-horse-battery-staple"
 
 
-def authenticated_user(
+def authenticated_user_without_consent(
     client: TestClient,
     *,
     email: str = "daily-record@example.com",
@@ -50,6 +52,32 @@ def authenticated_user(
         {"Authorization": f"Bearer {token}"},
         cast(dict[str, object], signup_response.json()),
     )
+
+
+def grant_health_data_consent(client: TestClient, headers: dict[str, str]) -> None:
+    response = client.post(
+        CONSENTS_PATH,
+        headers=headers,
+        json={"consent_type": "health_data", "source": "test_setup"},
+    )
+    assert response.status_code == 201, response.text
+
+
+def withdraw_health_data_consent(client: TestClient, headers: dict[str, str]) -> None:
+    response = client.delete(f"{CONSENTS_PATH}/health_data", headers=headers)
+    assert response.status_code == 201, response.text
+
+
+def authenticated_user(
+    client: TestClient,
+    *,
+    email: str = "daily-record@example.com",
+) -> tuple[dict[str, str], dict[str, object]]:
+    # 쓰기 엔드포인트가 health_data 동의를 요구하므로 이 헬퍼는 동의까지 마친
+    # 사용자를 돌려준다. 미동의 상태가 필요한 테스트는 위 _without_consent를 쓴다.
+    headers, user = authenticated_user_without_consent(client, email=email)
+    grant_health_data_consent(client, headers)
+    return headers, user
 
 
 def create_record(
@@ -689,6 +717,18 @@ def test_duplicate_rolls_back_shared_session(
         hashed_password=hash_password(PASSWORD),
     )
     db_session.add(user)
+    db_session.flush()
+    # 이 테스트는 rollback 호출 횟수를 세므로 동의도 HTTP가 아니라 DB에 직접 심는다.
+    db_session.add(
+        ConsentRecord(
+            user_id=user.id,
+            consent_type=ConsentType.HEALTH_DATA,
+            status=ConsentStatus.GRANTED,
+            granted_at=datetime.now(UTC),
+            withdrawn_at=None,
+            source="test_setup",
+        )
+    )
     db_session.commit()
     headers = {"Authorization": f"Bearer {create_access_token(subject=user.id)}"}
 
@@ -777,3 +817,71 @@ def test_openapi_declares_authenticated_daily_record_contract(
         "application/json"
     ]["schema"]
     assert response_schema["type"] == "array"
+
+
+def test_create_without_consent_is_forbidden(client: TestClient) -> None:
+    headers, _ = authenticated_user_without_consent(
+        client,
+        email="no-consent-create@example.com",
+    )
+
+    response = client.post(
+        BASE_PATH,
+        headers=headers,
+        json=canonical_daily_record_payload(),
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "health_data 동의가 필요합니다"}
+
+
+def test_create_after_consent_withdrawn_is_forbidden(client: TestClient) -> None:
+    headers, _ = authenticated_user(client, email="withdrawn-create@example.com")
+    withdraw_health_data_consent(client, headers)
+
+    response = client.post(
+        BASE_PATH,
+        headers=headers,
+        json=canonical_daily_record_payload(),
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "health_data 동의가 필요합니다"}
+
+
+def test_update_without_consent_is_forbidden(client: TestClient) -> None:
+    headers, _ = authenticated_user(client, email="withdrawn-update@example.com")
+    create_record(client, headers, "2026-07-20")
+    withdraw_health_data_consent(client, headers)
+
+    response = client.put(
+        f"{BASE_PATH}/2026-07-20",
+        headers=headers,
+        json=canonical_daily_record_payload(record_date="2026-07-20", steps=1234),
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "health_data 동의가 필요합니다"}
+
+
+def test_read_and_delete_work_without_consent(client: TestClient) -> None:
+    # 동의 철회 후에도 본인 데이터 조회/삭제는 열려 있어야 한다 — 삭제까지 막히면
+    # 동의를 철회한 사용자가 자기 데이터를 지울 방법이 사라진다.
+    headers, _ = authenticated_user(client, email="read-delete-no-consent@example.com")
+    create_record(client, headers, "2026-07-20")
+    withdraw_health_data_consent(client, headers)
+
+    listed = client.get(
+        BASE_PATH,
+        headers=headers,
+        params={"date_from": "2026-07-20", "date_to": "2026-07-20"},
+    )
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()) == 1
+
+    by_date = client.get(f"{BASE_PATH}/2026-07-20", headers=headers)
+    assert by_date.status_code == 200, by_date.text
+
+    deleted = client.delete(f"{BASE_PATH}/2026-07-20", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+    assert client.get(f"{BASE_PATH}/2026-07-20", headers=headers).status_code == 404

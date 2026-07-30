@@ -32,7 +32,7 @@ def load_schema(path: Path) -> dict[str, Any]:
 def test_all_contract_schemas_and_examples_remain_valid() -> None:
     paths = sorted(SCHEMA_DIR.glob("*.schema.json"))
 
-    assert len(paths) == 13
+    assert len(paths) == 15
     for path in paths:
         schema = load_schema(path)
         validator_class = validator_for(schema)

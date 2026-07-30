@@ -28,10 +28,15 @@ from pydantic import (
 )
 
 from app.core.config import Settings
+from app.domain.recovery.models import (
+    RecoveryReportGenerationRequest,
+    RecoveryReportGenerationResponse,
+)
 
 LOGGER = logging.getLogger(__name__)
 
 CLASSIFY_ENDPOINT = "v2/emotions/classify"
+REPORT_ENDPOINT = "v1/recovery-reports/generate"
 LIVENESS_ENDPOINT = "health/live"
 READINESS_ENDPOINT = "health/ready"
 
@@ -333,7 +338,7 @@ class AIServiceClientConfig:
         )
 
 
-ResponseModel = TypeVar("ResponseModel", bound=_WireModel)
+ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
 
 
 class AIServiceClient:
@@ -416,6 +421,28 @@ class AIServiceClient:
         )
         return result
 
+    async def generate_recovery_report(
+        self,
+        request: RecoveryReportGenerationRequest,
+    ) -> RecoveryReportGenerationResponse:
+        result, _ = await self._request_model(
+            "POST",
+            REPORT_ENDPOINT,
+            request_model=request,
+            response_model=RecoveryReportGenerationResponse,
+            expected_statuses={200},
+        )
+        try:
+            result.validate_against(request)
+        except ValueError:
+            raise AIServiceResponseValidationError(
+                "AI service recovery report failed semantic validation",
+                endpoint=REPORT_ENDPOINT,
+                error_code="invalid_response_schema",
+                status_code=200,
+            ) from None
+        return result
+
     async def check_liveness(self) -> LivenessResponse:
         result, _ = await self._request_model(
             "GET",
@@ -461,7 +488,7 @@ class AIServiceClient:
         *,
         response_model: type[ResponseModel],
         expected_statuses: set[int],
-        request_model: _WireModel | None = None,
+        request_model: BaseModel | None = None,
     ) -> tuple[ResponseModel, int]:
         if self._closed:
             raise AIServiceConfigurationError(
@@ -655,6 +682,8 @@ __all__ = [
     "CoarseEmotionResponse",
     "CoarseEmotionTopPrediction",
     "LivenessResponse",
+    "RecoveryReportGenerationRequest",
+    "RecoveryReportGenerationResponse",
     "ReadinessResponse",
     "UncertaintyReason",
     "create_ai_service_client",

@@ -69,6 +69,7 @@ def list_daily_records(
     user_id: str,
     start_date: date | None = None,
     end_date: date | None = None,
+    for_update: bool = False,
 ) -> list[BehavioralDailyRecord]:
     statement = select(BehavioralDailyRecord).where(
         BehavioralDailyRecord.user_id == user_id
@@ -84,7 +85,10 @@ def list_daily_records(
     statement = statement.order_by(
         BehavioralDailyRecord.record_date.desc(),
         BehavioralDailyRecord.created_at.desc(),
+        BehavioralDailyRecord.id.desc(),
     )
+    if for_update:
+        statement = statement.with_for_update()
     return list(session.scalars(statement))
 
 

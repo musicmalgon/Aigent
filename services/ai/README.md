@@ -149,3 +149,21 @@ TF-IDF의 joblib 파일은 pickle 기반이므로 로드하는 것만으로 임�
   구분합니다.
 - 결과는 생활 패턴 신호 설명에 한정하며 의료적 진단·확률·치료 판단으로
   해석하지 않습니다.
+
+## Recovery Report 문장화
+
+`POST /v1/recovery-reports/generate`는 백엔드가 계산한 최근 7일 facts와
+미리 선택한 recovery action만 받아 한국어 문장을 구조화된 JSON으로
+반환합니다. 원문 일기는 받지 않으며, 수치 재계산·원인 추정·새 행동 추천·
+의료 표현을 금지합니다.
+
+```dotenv
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_TIMEOUT_SECONDS=20
+REPORT_PROMPT_VERSION=recovery-report-prompt-v1
+```
+
+API key가 없거나 Gemini 호출·JSON 검증이 실패하면 AI endpoint는 오류를
+반환합니다. Backend Recovery Report API는 이 오류를 사용자에게 전파하지
+않고 규칙 기반 템플릿으로 완성된 리포트를 저장합니다.

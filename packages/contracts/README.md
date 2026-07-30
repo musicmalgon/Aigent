@@ -47,3 +47,14 @@ The deterministic backend risk engine adds:
 These contracts use the existing `snake_case` behavioral metric names. The
 result is a versioned, non-diagnostic signal with explainable factor codes; it
 does not contain raw user text or a medical interpretation.
+
+Recovery report copy generation adds:
+
+- `recovery_report_generation_request.schema.json`
+- `recovery_report_generation_response.schema.json`
+
+The request contains only deterministic facts and recovery actions selected by
+the backend catalog. It does not contain raw journal text. The response may
+word those supplied facts and reasons, but it cannot add action identifiers or
+recalculate risk values. Runtime cross-field validation requires returned
+factor and action identifiers to exactly match the request order.

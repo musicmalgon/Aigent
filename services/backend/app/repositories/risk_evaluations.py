@@ -84,13 +84,15 @@ def get_risk_evaluation(
     *,
     user_id: str,
     evaluation_id: str,
+    for_update: bool = False,
 ) -> BurnoutRiskEvaluation | None:
-    return session.scalar(
-        select(BurnoutRiskEvaluation).where(
-            BurnoutRiskEvaluation.id == evaluation_id,
-            BurnoutRiskEvaluation.user_id == user_id,
-        )
+    statement = select(BurnoutRiskEvaluation).where(
+        BurnoutRiskEvaluation.id == evaluation_id,
+        BurnoutRiskEvaluation.user_id == user_id,
     )
+    if for_update:
+        statement = statement.with_for_update()
+    return session.scalar(statement)
 
 
 def get_latest_risk_evaluation(

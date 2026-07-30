@@ -478,6 +478,85 @@ class BurnoutRiskEvaluation(Base):
     baseline: Mapped[BehavioralBaseline | None] = relationship(
         back_populates="risk_evaluations"
     )
+    recovery_reports: Mapped[list[RecoveryReport]] = relationship(
+        back_populates="risk_evaluation",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class RecoveryReport(Base):
+    __tablename__ = "recovery_reports"
+    __table_args__ = (
+        CheckConstraint(
+            "period_start <= period_end",
+            name="ck_recovery_report_period",
+        ),
+        CheckConstraint(
+            "generation_status IN ('llm_generated', 'template_fallback')",
+            name="ck_recovery_report_generation_status",
+        ),
+        CheckConstraint(
+            "length(trim(catalog_version)) > 0",
+            name="ck_recovery_report_catalog_version_nonempty",
+        ),
+        CheckConstraint(
+            "length(trim(prompt_version)) > 0",
+            name="ck_recovery_report_prompt_version_nonempty",
+        ),
+        CheckConstraint(
+            "model_name IS NULL OR length(trim(model_name)) > 0",
+            name="ck_recovery_report_model_name_nonempty",
+        ),
+        Index(
+            "ix_recovery_reports_user_generated_at",
+            "user_id",
+            "generated_at",
+        ),
+        Index(
+            "ix_recovery_reports_risk_evaluation",
+            "risk_evaluation_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    risk_evaluation_id: Mapped[str] = mapped_column(
+        ForeignKey("burnout_risk_evaluations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    facts: Mapped[dict[str, Any]] = mapped_column(StrictJSON(), nullable=False)
+    selected_actions: Mapped[list[dict[str, Any]]] = mapped_column(
+        StrictJSON(),
+        nullable=False,
+    )
+    content: Mapped[dict[str, Any]] = mapped_column(StrictJSON(), nullable=False)
+    disclaimer: Mapped[str] = mapped_column(String(512), nullable=False)
+    generation_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    catalog_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_name: Mapped[str | None] = mapped_column(String(128))
+    generated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        default=_utc_now,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        default=_utc_now,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped[User] = relationship(back_populates="recovery_reports")
+    risk_evaluation: Mapped[BurnoutRiskEvaluation] = relationship(
+        back_populates="recovery_reports"
+    )
 
 
 __all__ = [
@@ -487,4 +566,5 @@ __all__ = [
     "DailyRecordSource",
     "EmotionAnalysisResult",
     "PersistenceBaselineStatus",
+    "RecoveryReport",
 ]

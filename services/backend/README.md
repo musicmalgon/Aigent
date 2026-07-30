@@ -66,10 +66,15 @@ production database.
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Positive lifetime, at most 7 days |
 | `SQLADMIN_ENABLED` | Registers SQLAdmin only when explicitly enabled |
 | `SQLADMIN_PATH` | Non-root path for the development admin UI |
+| `AI_SERVICE_BASE_URL` | Internal Emotion and Recovery Report AI service URL |
 
 Production startup fails when `JWT_SECRET_KEY` is missing or resembles a public
 placeholder. Keep production secrets in the deployment secret manager. Do not
 put them in source control, command output, logs, or `.env.example`.
+
+Recovery Report behavior, deterministic recommendation policy, transaction
+boundaries, and fallback semantics are documented in
+`docs/recovery_report_api.md`.
 
 SQLAdmin has no authentication in the current backend. It defaults to disabled
 and can only be enabled when `APP_ENV=development`. Keep it bound to a trusted

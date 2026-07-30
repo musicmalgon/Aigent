@@ -17,6 +17,7 @@ from .report_schemas import (
 )
 
 GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
 
 SYSTEM_INSTRUCTION = """\
 당신은 비의료적 생활 리포트의 한국어 문장 편집기입니다.
@@ -101,7 +102,7 @@ class GeminiReportSettings:
     @classmethod
     def from_env(cls) -> GeminiReportSettings:
         raw_key = os.getenv("GEMINI_API_KEY", "").strip()
-        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+        model_name = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
         if not model_name or "/" in model_name or any(
             character.isspace() for character in model_name
         ):
@@ -234,6 +235,7 @@ class GeminiRecoveryReportGenerator:
 
 
 __all__ = [
+    "DEFAULT_GEMINI_MODEL",
     "GEMINI_API_BASE_URL",
     "GeminiRecoveryReportGenerator",
     "GeminiReportSettings",

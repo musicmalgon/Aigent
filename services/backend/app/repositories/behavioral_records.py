@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.persistence import BehavioralDailyRecord
@@ -63,6 +63,21 @@ def get_daily_record_by_date(
     )
 
 
+def count_daily_records(
+    session: Session,
+    *,
+    user_id: str,
+) -> int:
+    return (
+        session.scalar(
+            select(func.count())
+            .select_from(BehavioralDailyRecord)
+            .where(BehavioralDailyRecord.user_id == user_id)
+        )
+        or 0
+    )
+
+
 def list_daily_records(
     session: Session,
     *,
@@ -113,6 +128,7 @@ def delete_daily_record(
     session.flush()
 
 __all__ = [
+    "count_daily_records",
     "create_daily_record",
     "get_daily_record",
     "get_daily_record_by_date",

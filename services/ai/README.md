@@ -4,6 +4,9 @@
 > [`docs/emotion_taxonomy_v2_training_guide.md`](docs/emotion_taxonomy_v2_training_guide.md)를
 > 따른다. 선정된 v2 모델은 별도 `/v2/emotions/classify` 계약으로 제공하며
 > 기존 coarse-v1 공유 계약과 저장 이력은 변경하지 않는다.
+> 현재 모델의 confidence/margin abstention 품질과 threshold grid 평가는
+> [`docs/emotion_abstention_evaluation.md`](docs/emotion_abstention_evaluation.md)를
+> 따른다.
 
 > The six-class coarse-emotion runtime and API are documented in
 > [`docs/coarse_emotion_inference.md`](docs/coarse_emotion_inference.md). The

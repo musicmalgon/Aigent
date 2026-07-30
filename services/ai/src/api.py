@@ -11,6 +11,16 @@ from fastapi.responses import JSONResponse
 
 from .emotion import CoarseEmotionSettings, CoarseTransformerEmotionAnalyzer
 from .emotion.base import ModelNotReadyError, PredictionError
+from .report_generation import (
+    GeminiRecoveryReportGenerator,
+    GeminiReportSettings,
+    RecoveryReportGenerationError,
+    RecoveryReportNotConfiguredError,
+)
+from .report_schemas import (
+    RecoveryReportGenerationRequest,
+    RecoveryReportGenerationResponse,
+)
 from .schemas import CoarseEmotionInput, RemindCoarseEmotionInferenceResponse
 
 LOGGER = logging.getLogger(__name__)
@@ -27,10 +37,23 @@ class CoarseEmotionService(Protocol):
     ) -> RemindCoarseEmotionInferenceResponse: ...
 
 
+class RecoveryReportService(Protocol):
+    @property
+    def is_configured(self) -> bool: ...
+
+    async def generate(
+        self,
+        request: RecoveryReportGenerationRequest,
+    ) -> RecoveryReportGenerationResponse: ...
+
+    async def aclose(self) -> None: ...
+
+
 def create_app(
     *,
     analyzer: CoarseEmotionService | None = None,
     settings: CoarseEmotionSettings | None = None,
+    report_generator: RecoveryReportService | None = None,
 ) -> FastAPI:
     """Create an app whose liveness is independent from model readiness."""
 
@@ -39,6 +62,10 @@ def create_app(
         service = CoarseTransformerEmotionAnalyzer(
             settings or CoarseEmotionSettings.from_env()
         )
+    generator = report_generator or GeminiRecoveryReportGenerator(
+        GeminiReportSettings.from_env()
+    )
+    owns_generator = report_generator is None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
@@ -52,7 +79,11 @@ def create_app(
                     "coarse emotion model is not ready at startup: %s",
                     type(exc).__name__,
                 )
-        yield
+        try:
+            yield
+        finally:
+            if owns_generator:
+                await generator.aclose()
 
     app = FastAPI(
         title="Re:Mind AI Service",
@@ -64,6 +95,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.coarse_emotion_analyzer = service
+    app.state.recovery_report_generator = generator
 
     @app.get("/health/live", tags=["health"])
     def liveness() -> dict[str, str]:
@@ -103,7 +135,34 @@ def create_app(
                 detail="emotion inference failed",
             ) from exc
 
+    @app.post(
+        "/v1/recovery-reports/generate",
+        response_model=RecoveryReportGenerationResponse,
+        tags=["recovery-reports"],
+        summary="Turn deterministic recovery facts into structured Korean copy",
+    )
+    async def generate_recovery_report(
+        request: RecoveryReportGenerationRequest,
+    ) -> RecoveryReportGenerationResponse:
+        if not generator.is_configured:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="recovery report generation is not configured",
+            )
+        try:
+            return await generator.generate(request)
+        except RecoveryReportNotConfiguredError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="recovery report generation is not configured",
+            ) from exc
+        except RecoveryReportGenerationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="recovery report generation failed",
+            ) from exc
+
     return app
 
 
-__all__ = ["CoarseEmotionService", "create_app"]
+__all__ = ["CoarseEmotionService", "RecoveryReportService", "create_app"]

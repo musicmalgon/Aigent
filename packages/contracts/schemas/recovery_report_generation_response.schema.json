@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "recovery_report_generation_response.schema.json",
+  "title": "RecoveryReportGenerationResponse",
+  "description": "Natural-language copy generated only from supplied report facts and recovery actions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "headline",
+    "summary",
+    "weekly_observation",
+    "changed_items",
+    "recommendation_intro",
+    "recommendation_descriptions",
+    "model_name",
+    "prompt_version"
+  ],
+  "properties": {
+    "headline": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "weekly_observation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "changed_items": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/changedItem"
+      }
+    },
+    "recommendation_intro": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "recommendation_descriptions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/recommendation"
+      }
+    },
+    "model_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "prompt_version": {
+      "type": "string",
+      "const": "recovery-report-prompt-v1"
+    }
+  },
+  "$defs": {
+    "factorCode": {
+      "type": "string",
+      "enum": [
+        "sleep_decrease",
+        "workload_increase",
+        "schedule_overload",
+        "rest_decrease",
+        "exercise_decrease",
+        "negative_emotion_increase",
+        "high_negative_emotion",
+        "subjective_stress",
+        "subjective_fatigue"
+      ]
+    },
+    "actionId": {
+      "type": "string",
+      "enum": [
+        "REST_30",
+        "SLEEP_EARLY_60",
+        "LIGHT_ACTIVITY_20",
+        "SCHEDULE_REDUCE_ONE",
+        "JOURNAL_CHECKIN_10",
+        "ROUTINE_CHECK_5"
+      ]
+    },
+    "changedItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["factor_code", "title", "description"],
+      "properties": {
+        "factor_code": {
+          "$ref": "#/$defs/factorCode"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 320
+        }
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_id", "reason"],
+      "properties": {
+        "action_id": {
+          "$ref": "#/$defs/actionId"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 320
+        }
+      }
+    }
+  }
+}

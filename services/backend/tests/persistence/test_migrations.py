@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 from pathlib import Path
 
@@ -19,6 +20,7 @@ EXPECTED_TABLES = {
     "emotion_analysis_results",
     "behavioral_baselines",
     "burnout_risk_evaluations",
+    "recovery_reports",
     "alembic_version",
 }
 
@@ -713,6 +715,98 @@ def test_0006_downgrade_rejects_v2_provenance(
                     )
                 )
                 == "불안"
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0007_downgrade_rejects_generated_report_history(
+    database_url: str,
+) -> None:
+    config = make_alembic_config(database_url)
+    command.upgrade(config, "head")
+    engine = create_database_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, hashed_password) "
+                    "VALUES (:id, :email, :password)"
+                ),
+                {
+                    "id": "report-downgrade-user",
+                    "email": "report-downgrade@example.com",
+                    "password": "synthetic-password-hash",
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO burnout_risk_evaluations ("
+                    "id, user_id, record_date, evaluated_at, engine_version, "
+                    "score, level, is_provisional, baseline_status, "
+                    "data_quality, category_scores, factors, summary, created_at"
+                    ") VALUES ("
+                    ":id, :user_id, '2026-07-20', CURRENT_TIMESTAMP, "
+                    "'burnout-risk-rules-v1', 0, 'low', FALSE, 'ready', "
+                    "'sufficient', :category_scores, :factors, :summary, "
+                    "CURRENT_TIMESTAMP)"
+                ),
+                {
+                    "id": "report-downgrade-risk",
+                    "user_id": "report-downgrade-user",
+                    "category_scores": json.dumps({}),
+                    "factors": json.dumps([]),
+                    "summary": json.dumps(
+                        {
+                            "top_factor_codes": [],
+                            "available_signal_count": 7,
+                            "missing_signal_count": 0,
+                            "available_category_count": 5,
+                            "missing_category_count": 0,
+                        }
+                    ),
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO recovery_reports ("
+                    "id, user_id, risk_evaluation_id, period_start, period_end, "
+                    "facts, selected_actions, content, disclaimer, "
+                    "generation_status, catalog_version, prompt_version, "
+                    "model_name, generated_at, created_at"
+                    ") VALUES ("
+                    ":id, :user_id, :risk_id, '2026-07-14', '2026-07-20', "
+                    ":facts, :actions, :content, :disclaimer, "
+                    "'template_fallback', 'recovery-catalog-v1', "
+                    "'recovery-report-prompt-v1', NULL, CURRENT_TIMESTAMP, "
+                    "CURRENT_TIMESTAMP)"
+                ),
+                {
+                    "id": "report-downgrade-report",
+                    "user_id": "report-downgrade-user",
+                    "risk_id": "report-downgrade-risk",
+                    "facts": json.dumps({}),
+                    "actions": json.dumps([]),
+                    "content": json.dumps({}),
+                    "disclaimer": "synthetic non-medical disclaimer",
+                },
+            )
+    finally:
+        engine.dispose()
+
+    with pytest.raises(RuntimeError, match="recovery_reports"):
+        command.downgrade(config, "20260729_0006")
+
+    engine = create_database_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "20260730_0007"
+            )
+            assert (
+                connection.scalar(text("SELECT count(*) FROM recovery_reports"))
+                == 1
             )
     finally:
         engine.dispose()

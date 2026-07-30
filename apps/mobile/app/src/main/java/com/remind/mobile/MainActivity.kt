@@ -298,7 +298,31 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
                             ConsentType.HEALTH_DATA,
                         )
                         healthDataConsentGranted = false
-                        consentStatusText = "건강 데이터 동의 철회됨 (${withdrawn.withdrawnAt})"
+
+                        // 이미 전송된 기록 정리(best-effort). 목록 API가 range 쿼리를 28일로
+                        // 제한하므로 그보다 오래된 기록은 남는다 -- 수명이 짧은 PoC 데모
+                        // 데이터 기준으로 허용 가능한 트레이드오프이며 전체 계정 purge는 아니다.
+                        val today = LocalDate.now()
+                        val syncedRecords = ApiClient.service.listBehavioralRecords(
+                            "Bearer $token",
+                            dateFrom = today.minusDays(27).toString(),
+                            dateTo = today.toString(),
+                        )
+                        var deletedCount = 0
+                        for (record in syncedRecords) {
+                            try {
+                                val response = ApiClient.service.deleteBehavioralRecord(
+                                    "Bearer $token",
+                                    record.date,
+                                )
+                                if (response.isSuccessful) deletedCount++
+                            } catch (e: Exception) {
+                                // best-effort: 한 날짜의 삭제 실패가 나머지를 중단시키지 않는다.
+                            }
+                        }
+
+                        consentStatusText =
+                            "건강 데이터 동의 철회됨 (${withdrawn.withdrawnAt}), 기존 기록 ${deletedCount}건 삭제"
                     } catch (e: HttpException) {
                         consentStatusText = if (e.code() == 404) {
                             "철회할 동의가 없습니다"

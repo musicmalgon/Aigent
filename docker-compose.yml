@@ -1,0 +1,33 @@
+services:
+  backend:
+    build:
+      context: ./services/backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./services/backend/.env
+    environment:
+      AI_SERVICE_BASE_URL: http://ai:8001
+    depends_on:
+      ai:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ai:
+    build:
+      context: ./services/ai
+    expose:
+      - "8001"
+    env_file:
+      - ./services/ai/.env
+    environment:
+      EMOTION_MODEL_DIR: /models/current
+      EMOTION_TOKENIZER_DIR: /models/current
+    volumes:
+      - ./model-artifacts:/models/current:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/live')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped

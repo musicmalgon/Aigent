@@ -14,6 +14,7 @@ from app.api import (
     baselines,
     behavioral_records,
     consents,
+    dashboard,
     emotion_analyses,
     recovery_reports,
     risk_evaluations,
@@ -91,6 +92,7 @@ def create_app(
     application.include_router(risk_evaluations.router)
     application.include_router(recovery_reports.router)
     application.include_router(consents.router)
+    application.include_router(dashboard.router)
     application.include_router(assessments.router, tags=["assessments"])
 
     @application.get("/")

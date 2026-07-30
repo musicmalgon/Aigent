@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_ai_service_client, get_current_user
+from app.api.deps import get_ai_service_client, get_current_user, require_consent
 from app.clients.ai import (
     AIServiceClient,
     AIServiceClientResponseError,
@@ -17,6 +17,7 @@ from app.clients.ai import (
     AIServiceTimeoutError,
 )
 from app.core.database import get_db
+from app.models.consent import ConsentType
 from app.models.user import User
 from app.repositories.behavioral_records import get_daily_record_by_date
 from app.repositories.emotion_results import (
@@ -75,7 +76,7 @@ def _downstream_error(exc: AIServiceError) -> HTTPException:
 )
 async def create_emotion_analysis(
     payload: EmotionAnalysisCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_consent(ConsentType.EMOTION_DIARY)),
     db: Session = Depends(get_db),
     ai_client: AIServiceClient = Depends(get_ai_service_client),
 ) -> EmotionAnalysisRead:

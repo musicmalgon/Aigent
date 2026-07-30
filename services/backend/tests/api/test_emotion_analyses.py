@@ -38,6 +38,7 @@ from tests.daily_record_contract import canonical_daily_record_payload
 
 BASE_PATH = "/api/v1/emotion-analyses"
 DAILY_RECORD_PATH = "/api/v1/behavioral-records"
+CONSENTS_PATH = "/api/v1/consents"
 RECORD_DATE = "2026-07-20"
 PASSWORD = "correct-horse-battery-staple"
 Handler = Callable[[httpx.Request], httpx.Response]
@@ -135,10 +136,24 @@ def emotion_api_client(
         asyncio.run(ai_client.aclose())
 
 
+def grant_consent(
+    client: TestClient,
+    headers: dict[str, str],
+    consent_type: str,
+) -> None:
+    response = client.post(
+        CONSENTS_PATH,
+        headers=headers,
+        json={"consent_type": consent_type, "source": "test_setup"},
+    )
+    assert response.status_code == 201, response.text
+
+
 def authenticated_headers(
     client: TestClient,
     *,
     email: str = "emotion-analysis@example.com",
+    consents: tuple[str, ...] = ("health_data", "emotion_diary"),
 ) -> tuple[dict[str, str], str]:
     signup = client.post(
         "/auth/signup",
@@ -151,7 +166,12 @@ def authenticated_headers(
     )
     assert login.status_code == 200
     token = cast(str, login.json()["access_token"])
-    return {"Authorization": f"Bearer {token}"}, cast(str, signup.json()["id"])
+    headers = {"Authorization": f"Bearer {token}"}
+    # 감정분석 POST는 emotion_diary 동의를, 선행 생활기록 등록은 health_data 동의를
+    # 요구한다. 기본값으로 둘 다 부여해야 기존 테스트가 그대로 통과한다.
+    for consent_type in consents:
+        grant_consent(client, headers, consent_type)
+    return headers, cast(str, signup.json()["id"])
 
 
 def emotion_result_count(engine: Engine) -> int:
@@ -197,6 +217,37 @@ def test_requires_authentication(
         )
 
     assert response.status_code == 401
+    assert calls == 0
+    assert emotion_result_count(migrated_engine) == 0
+
+
+def test_create_without_emotion_diary_consent_is_forbidden(
+    app_settings: Settings,
+    migrated_engine: Engine,
+) -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return json_response(request, valid_ai_payload())
+
+    with emotion_api_client(app_settings, migrated_engine, handler) as client:
+        # health_data만 부여 — 선행 생활기록 등록은 되지만 감정분석은 막혀야 한다.
+        headers, _ = authenticated_headers(client, consents=("health_data",))
+        create_daily_record(client, headers)
+        response = client.post(
+            BASE_PATH,
+            headers=headers,
+            json={
+                "record_date": RECORD_DATE,
+                "hs01": "first",
+                "hs02": "second",
+            },
+        )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "emotion_diary 동의가 필요합니다"}
     assert calls == 0
     assert emotion_result_count(migrated_engine) == 0
 

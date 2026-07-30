@@ -151,10 +151,17 @@ def authenticated_user(
         json={"email": email, "password": PASSWORD},
     )
     assert login.status_code == 200
-    return (
-        {"Authorization": f"Bearer {login.json()['access_token']}"},
-        cast(str, signup.json()["id"]),
-    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    # 이 파일의 일부 테스트는 생활기록/감정분석 쓰기 API를 직접 호출한다.
+    # 두 API 모두 동의를 요구하므로 헬퍼에서 미리 부여해 둔다.
+    for consent_type in ("health_data", "emotion_diary"):
+        consent = client.post(
+            "/api/v1/consents",
+            headers=headers,
+            json={"consent_type": consent_type, "source": "test_setup"},
+        )
+        assert consent.status_code == 201, consent.text
+    return headers, cast(str, signup.json()["id"])
 
 
 def risk_result() -> BurnoutRiskEvaluationResponse:

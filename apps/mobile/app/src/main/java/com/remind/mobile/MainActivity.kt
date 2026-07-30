@@ -32,6 +32,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.remind.mobile.network.ApiClient
+import com.remind.mobile.network.ConsentGrantRequest
+import com.remind.mobile.network.ConsentType
 import com.remind.mobile.network.LoginRequest
 import com.remind.mobile.network.SignupRequest
 import com.remind.mobile.ui.theme.ReMindTheme
@@ -73,6 +75,9 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
     var loginStatusText by remember { mutableStateOf("로그인 안 됨") }
     var submitResultText by remember { mutableStateOf("아직 전송하지 않음") }
 
+    var healthDataConsentGranted by remember { mutableStateOf(false) }
+    var consentStatusText by remember { mutableStateOf("동의 상태 확인 전") }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = PermissionController.createRequestPermissionResultContract()
     ) { granted ->
@@ -108,6 +113,32 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Grant only once both preconditions hold. The GET-then-POST pair lives in
+    // one coroutine on purpose: splitting "check existing consent" and "grant
+    // if missing" across the login handler and a separate effect would let both
+    // fire a grant call for the same user.
+    LaunchedEffect(permissionGranted, authToken) {
+        val token = authToken ?: return@LaunchedEffect
+        if (!permissionGranted) return@LaunchedEffect
+        try {
+            val consents = ApiClient.service.getConsents("Bearer $token")
+            val current = consents.find { it.consentType == ConsentType.HEALTH_DATA }
+            if (current?.status == "granted") {
+                healthDataConsentGranted = true
+                consentStatusText = "건강 데이터 동의 상태: 등록됨"
+            } else {
+                val granted = ApiClient.service.grantConsent(
+                    "Bearer $token",
+                    ConsentGrantRequest(ConsentType.HEALTH_DATA, "health_connect_permission_screen"),
+                )
+                healthDataConsentGranted = true
+                consentStatusText = "건강 데이터 동의 등록됨 (${granted.grantedAt})"
+            }
+        } catch (e: Exception) {
+            consentStatusText = "동의 상태 확인 실패: ${e.message}"
+        }
     }
 
     Column(
@@ -252,5 +283,36 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
         }
 
         Text(text = submitResultText)
+
+        HorizontalDivider()
+        Text(text = "동의 관리 (4단계)")
+        Text(text = consentStatusText)
+
+        Button(
+            onClick = {
+                val token = authToken ?: return@Button
+                scope.launch {
+                    try {
+                        val withdrawn = ApiClient.service.withdrawConsent(
+                            "Bearer $token",
+                            ConsentType.HEALTH_DATA,
+                        )
+                        healthDataConsentGranted = false
+                        consentStatusText = "건강 데이터 동의 철회됨 (${withdrawn.withdrawnAt})"
+                    } catch (e: HttpException) {
+                        consentStatusText = if (e.code() == 404) {
+                            "철회할 동의가 없습니다"
+                        } else {
+                            "동의 철회 실패: HTTP ${e.code()}"
+                        }
+                    } catch (e: Exception) {
+                        consentStatusText = "동의 철회 실패: ${e.message}"
+                    }
+                }
+            },
+            enabled = healthDataConsentGranted && authToken != null
+        ) {
+            Text("건강 데이터 연동 동의 철회")
+        }
     }
 }

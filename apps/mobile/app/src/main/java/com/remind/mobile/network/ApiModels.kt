@@ -99,3 +99,26 @@ data class DailyRecordRead(
     @SerialName("source_by_field") val sourceByField: SourceByField,
     @SerialName("coverage_by_field") val coverageByField: CoverageByField,
 )
+
+object ConsentType {
+    const val HEALTH_DATA = "health_data"
+    const val EMOTION_DIARY = "emotion_diary"
+}
+
+@Serializable
+data class ConsentGrantRequest(
+    @SerialName("consent_type") val consentType: String,
+    val source: String,
+)
+
+@Serializable
+data class ConsentRecordRead(
+    val id: String,
+    @SerialName("user_id") val userId: String,
+    @SerialName("consent_type") val consentType: String,
+    val status: String,
+    @SerialName("granted_at") val grantedAt: String,
+    @SerialName("withdrawn_at") val withdrawnAt: String? = null,
+    val source: String,
+    @SerialName("created_at") val createdAt: String,
+)

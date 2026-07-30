@@ -159,7 +159,7 @@ TF-IDF의 joblib 파일은 pickle 기반이므로 로드하는 것만으로 임�
 
 ```dotenv
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.6-flash
 GEMINI_TIMEOUT_SECONDS=20
 REPORT_PROMPT_VERSION=recovery-report-prompt-v1
 ```

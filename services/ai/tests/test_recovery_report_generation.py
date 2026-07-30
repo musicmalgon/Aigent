@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 import pytest
 from ai.src.report_generation import (
+    DEFAULT_GEMINI_MODEL,
     GeminiRecoveryReportGenerator,
     GeminiReportSettings,
     RecoveryReportGenerationError,
@@ -87,6 +88,17 @@ def copy_payload() -> dict[str, Any]:
             }
         ],
     }
+
+
+def test_gemini_settings_use_supported_default_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+
+    settings = GeminiReportSettings.from_env()
+
+    assert settings.model_name == DEFAULT_GEMINI_MODEL
+    assert settings.model_name == "gemini-3.6-flash"
 
 
 def test_shared_contracts_validate_pydantic_payloads() -> None:

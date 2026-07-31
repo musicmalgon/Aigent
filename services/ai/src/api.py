@@ -9,7 +9,13 @@ from typing import Any, Protocol
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
 
-from .emotion import CoarseEmotionSettings, CoarseTransformerEmotionAnalyzer
+from .emotion import (
+    CoarseEmotionSettings,
+    CoarseTransformerEmotionAnalyzer,
+    NeutralGateAnalyzer,
+    NeutralGatedEmotionAnalyzer,
+    NeutralGateSettings,
+)
 from .emotion.base import ModelNotReadyError, PredictionError
 from .report_generation import (
     GeminiRecoveryReportGenerator,
@@ -53,14 +59,32 @@ def create_app(
     *,
     analyzer: CoarseEmotionService | None = None,
     settings: CoarseEmotionSettings | None = None,
+    neutral_gate_settings: NeutralGateSettings | None = None,
     report_generator: RecoveryReportService | None = None,
 ) -> FastAPI:
     """Create an app whose liveness is independent from model readiness."""
 
     service = analyzer
     if service is None:
-        service = CoarseTransformerEmotionAnalyzer(
+        coarse = CoarseTransformerEmotionAnalyzer(
             settings or CoarseEmotionSettings.from_env()
+        )
+        gate_settings = neutral_gate_settings or NeutralGateSettings.from_env()
+        gate = (
+            NeutralGateAnalyzer(
+                artifact_dir=gate_settings.artifact_dir,
+                device=gate_settings.device,
+                max_length=gate_settings.max_length,
+                threshold_override=gate_settings.threshold_override,
+                model_version_override=gate_settings.model_version_override,
+            )
+            if gate_settings.enabled
+            else None
+        )
+        service = NeutralGatedEmotionAnalyzer(
+            coarse,
+            gate,
+            threshold_version=gate_settings.threshold_version,
         )
     generator = report_generator or GeminiRecoveryReportGenerator(
         GeminiReportSettings.from_env()
@@ -104,10 +128,12 @@ def create_app(
     @app.get("/health/ready", tags=["health"])
     def readiness() -> Any:
         if service.is_loaded:
-            return {"status": "ready"}
+            metadata = getattr(service, "readiness_metadata", {})
+            return {"status": "ready", **metadata}
+        metadata = getattr(service, "readiness_metadata", {})
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"status": "not_ready"},
+            content={"status": "not_ready", **metadata},
         )
 
     @app.post(

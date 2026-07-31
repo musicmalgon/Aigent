@@ -117,6 +117,8 @@ def test_mapping_contains_only_persistence_fields() -> None:
     assert payload.is_uncertain is True
     assert payload.input_hash is None
     assert payload.analyzed_at.utcoffset() is not None
+    assert payload.probabilities is not None
+    assert response.probabilities is not None
     assert set(payload.probabilities) == set(EmotionV2Label)
     assert {
         label.value: probability

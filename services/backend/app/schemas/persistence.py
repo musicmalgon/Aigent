@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, time
 from enum import StrEnum
 from typing import Annotated, Any
@@ -48,6 +49,11 @@ class EmotionTaxonomyVersion(StrEnum):
     V2 = "v2"
 
 
+class NeutralGateDecision(StrEnum):
+    NEUTRAL = "neutral"
+    EMOTIONAL = "emotional"
+
+
 EmotionAnyLabel = EmotionLabel | EmotionV2Label
 
 
@@ -81,9 +87,7 @@ class DailyRecordPersistenceCreate(PersistenceSchema):
     @field_validator("bedtime", "wake_time")
     @classmethod
     def validate_local_time(cls, value: time | None) -> time | None:
-        if value is not None and (
-            value.tzinfo is not None or value.microsecond != 0
-        ):
+        if value is not None and (value.tzinfo is not None or value.microsecond != 0):
             raise ValueError(
                 "bedtime and wake_time must be whole-second local times "
                 "without a UTC offset"
@@ -105,16 +109,24 @@ class EmotionResultCreate(PersistenceSchema):
     analyzed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     taxonomy_version: EmotionTaxonomyVersion = EmotionTaxonomyVersion.V1
     model_version: Annotated[str, Field(min_length=1, max_length=128)]
-    predicted_emotion: EmotionAnyLabel
+    predicted_emotion: EmotionAnyLabel | None
     emotion: EmotionAnyLabel | None = None
-    confidence: Probability
+    confidence: Probability | None
     is_uncertain: bool
-    probabilities: dict[EmotionAnyLabel, Probability]
+    probabilities: (
+        Mapping[EmotionLabel, Probability]
+        | Mapping[EmotionV2Label, Probability]
+        | None
+    )
     margin: Probability | None = None
     provisional: bool = False
-    threshold_version: Annotated[str, Field(min_length=1, max_length=64)] | None = (
-        None
-    )
+    threshold_version: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    neutral_gate_decision: NeutralGateDecision | None = None
+    neutral_gate_score: Probability | None = None
+    neutral_gate_model_version: (
+        Annotated[str, Field(min_length=1, max_length=128)] | None
+    ) = None
+    neutral_gate_threshold: Probability | None = None
     input_hash: Annotated[str, Field(min_length=1, max_length=128)] | None = None
 
     @model_validator(mode="before")
@@ -132,7 +144,7 @@ class EmotionResultCreate(PersistenceSchema):
             if taxonomy in {EmotionTaxonomyVersion.V2, "v2"}
             else EmotionLabel
         )
-        if "predicted_emotion" in normalized:
+        if normalized.get("predicted_emotion") is not None:
             normalized["predicted_emotion"] = label_type(
                 normalized["predicted_emotion"]
             )
@@ -160,30 +172,74 @@ class EmotionResultCreate(PersistenceSchema):
             expected_labels = set(EmotionLabel)
             if not isinstance(self.predicted_emotion, EmotionLabel):
                 raise ValueError("v1 predicted_emotion must use a v1 label")
+            if self.confidence is None or self.probabilities is None:
+                raise ValueError("v1 model output is required")
             if self.emotion is not self.predicted_emotion:
                 raise ValueError("v1 emotion must match predicted_emotion")
             if self.margin is not None or self.threshold_version is not None:
                 raise ValueError("v1 rows cannot contain v2 threshold provenance")
             if self.provisional:
                 raise ValueError("v1 rows cannot use v2 abstention")
+            if any(
+                value is not None
+                for value in (
+                    self.neutral_gate_decision,
+                    self.neutral_gate_score,
+                    self.neutral_gate_model_version,
+                    self.neutral_gate_threshold,
+                )
+            ):
+                raise ValueError("v1 rows cannot contain neutral gate provenance")
         else:
             expected_labels = set(EmotionV2Label)
-            if not isinstance(self.predicted_emotion, EmotionV2Label):
-                raise ValueError("v2 predicted_emotion must use a v2 label")
-            if self.margin is None or self.threshold_version is None:
-                raise ValueError("v2 rows require margin and threshold_version")
-            if self.provisional != self.is_uncertain:
-                raise ValueError("v2 provisional must match is_uncertain")
-            expected_emotion = None if self.provisional else self.predicted_emotion
-            if self.emotion is not expected_emotion:
-                raise ValueError(
-                    "v2 emotion must be null exactly when provisional"
-                )
-
-        if set(self.probabilities) != expected_labels:
-            raise ValueError(
-                "probabilities must match the selected taxonomy labels"
+            if self.threshold_version is None:
+                raise ValueError("v2 rows require threshold_version")
+            gate_values = (
+                self.neutral_gate_decision,
+                self.neutral_gate_score,
+                self.neutral_gate_model_version,
+                self.neutral_gate_threshold,
             )
+            if any(value is not None for value in gate_values) and any(
+                value is None for value in gate_values
+            ):
+                raise ValueError("neutral gate provenance must be complete")
+            if self.neutral_gate_decision is NeutralGateDecision.NEUTRAL:
+                if any(
+                    value is not None
+                    for value in (
+                        self.predicted_emotion,
+                        self.emotion,
+                        self.confidence,
+                        self.margin,
+                        self.probabilities,
+                    )
+                ):
+                    raise ValueError("neutral gate rows cannot contain emotion output")
+                if not self.provisional or not self.is_uncertain:
+                    raise ValueError("neutral gate rows must be provisional")
+            else:
+                if not isinstance(self.predicted_emotion, EmotionV2Label):
+                    raise ValueError("v2 predicted_emotion must use a v2 label")
+                if (
+                    self.confidence is None
+                    or self.margin is None
+                    or self.probabilities is None
+                    or self.threshold_version is None
+                ):
+                    raise ValueError("v2 emotion rows require complete model output")
+                if self.provisional != self.is_uncertain:
+                    raise ValueError("v2 provisional must match is_uncertain")
+                expected_emotion = None if self.provisional else self.predicted_emotion
+                if self.emotion is not expected_emotion:
+                    raise ValueError("v2 emotion must be null exactly when provisional")
+
+        if self.probabilities is None:
+            if self.taxonomy_version is EmotionTaxonomyVersion.V1:
+                raise ValueError("v1 probabilities are required")
+            return self
+        if set(self.probabilities) != expected_labels:
+            raise ValueError("probabilities must match the selected taxonomy labels")
         if abs(sum(self.probabilities.values()) - 1.0) > 1e-6:
             raise ValueError("emotion probabilities must sum to 1 within 0.000001")
         return self

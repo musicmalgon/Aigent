@@ -80,6 +80,12 @@ class UncertaintyReason(StrEnum):
     LOW_CONFIDENCE = "low_confidence"
     SMALL_MARGIN = "small_margin"
     LOW_CONFIDENCE_AND_SMALL_MARGIN = "low_confidence_and_small_margin"
+    NEUTRAL_GATE = "neutral_gate"
+
+
+class NeutralGateDecision(StrEnum):
+    NEUTRAL = "neutral"
+    EMOTIONAL = "emotional"
 
 
 def _normalize_utterance(value: object, *, optional: bool) -> str | None:
@@ -133,26 +139,93 @@ class CoarseEmotionResponse(_WireModel):
     taxonomy_version: Literal["v2"]
     model_version: NonEmptyString
     threshold_version: NonEmptyString
-    predicted_emotion: CoarseEmotionLabel
-    predicted_label_id: Annotated[JsonInteger, Field(ge=0, le=5)]
+    predicted_emotion: CoarseEmotionLabel | None
+    predicted_label_id: Annotated[JsonInteger, Field(ge=0, le=5)] | None
     emotion: CoarseEmotionLabel | None
-    confidence: Probability
-    margin: Probability
+    confidence: Probability | None
+    margin: Probability | None
     provisional: StrictBool
     is_uncertain: StrictBool
     uncertainty_reason: UncertaintyReason | None
-    probabilities: Annotated[
-        dict[CoarseEmotionLabel, Probability],
-        Field(min_length=6, max_length=6),
-    ]
-    top_predictions: Annotated[
-        list[CoarseEmotionTopPrediction],
-        Field(min_length=1, max_length=6),
-    ]
+    probabilities: (
+        Annotated[
+            dict[CoarseEmotionLabel, Probability],
+            Field(min_length=6, max_length=6),
+        ]
+        | None
+    )
+    top_predictions: (
+        Annotated[
+            list[CoarseEmotionTopPrediction],
+            Field(min_length=1, max_length=6),
+        ]
+        | None
+    )
+    neutral_gate_decision: NeutralGateDecision | None = None
+    neutral_gate_score: Probability | None = None
+    neutral_gate_model_version: NonEmptyString | None = None
+    neutral_gate_threshold: Probability | None = None
     latency_ms: NonNegativeFloat
 
     @model_validator(mode="after")
     def validate_prediction_consistency(self) -> CoarseEmotionResponse:
+        gate_values = (
+            self.neutral_gate_decision,
+            self.neutral_gate_score,
+            self.neutral_gate_model_version,
+            self.neutral_gate_threshold,
+        )
+        gate_configured = any(value is not None for value in gate_values)
+        if gate_configured and any(value is None for value in gate_values):
+            raise ValueError("neutral gate provenance must be complete")
+        if self.neutral_gate_decision is NeutralGateDecision.NEUTRAL:
+            assert self.neutral_gate_score is not None
+            assert self.neutral_gate_threshold is not None
+            if 1.0 - self.neutral_gate_score >= self.neutral_gate_threshold:
+                raise ValueError("neutral gate decision does not match its threshold")
+            if any(
+                value is not None
+                for value in (
+                    self.predicted_emotion,
+                    self.predicted_label_id,
+                    self.emotion,
+                    self.confidence,
+                    self.margin,
+                    self.probabilities,
+                    self.top_predictions,
+                )
+            ):
+                raise ValueError("neutral gate results cannot contain emotion output")
+            if (
+                not self.provisional
+                or not self.is_uncertain
+                or self.uncertainty_reason is not UncertaintyReason.NEUTRAL_GATE
+            ):
+                raise ValueError("neutral gate results must be provisional")
+            return self
+        if self.neutral_gate_decision is NeutralGateDecision.EMOTIONAL:
+            assert self.neutral_gate_score is not None
+            assert self.neutral_gate_threshold is not None
+            if 1.0 - self.neutral_gate_score < self.neutral_gate_threshold:
+                raise ValueError("emotional gate decision does not match its threshold")
+        if any(
+            value is None
+            for value in (
+                self.predicted_emotion,
+                self.predicted_label_id,
+                self.confidence,
+                self.margin,
+                self.probabilities,
+                self.top_predictions,
+            )
+        ):
+            raise ValueError("emotion output is required when the neutral gate passes")
+        assert self.predicted_emotion is not None
+        assert self.predicted_label_id is not None
+        assert self.confidence is not None
+        assert self.margin is not None
+        assert self.probabilities is not None
+        assert self.top_predictions is not None
         if set(self.probabilities) != set(COARSE_EMOTION_LABELS):
             raise ValueError("probabilities must contain exactly the six labels")
         probability_sum = sum(self.probabilities.values())
@@ -194,6 +267,8 @@ class CoarseEmotionResponse(_WireModel):
             raise ValueError("uncertainty_reason must match is_uncertain")
         if self.provisional != self.is_uncertain:
             raise ValueError("provisional must match is_uncertain")
+        if self.uncertainty_reason is UncertaintyReason.NEUTRAL_GATE:
+            raise ValueError("neutral_gate uncertainty requires a neutral decision")
         expected_emotion = None if self.provisional else winner
         if self.emotion is not expected_emotion:
             raise ValueError("emotion must be null exactly when provisional")
@@ -215,6 +290,8 @@ class LivenessResponse(_WireModel):
 
 class ReadinessResponse(_WireModel):
     status: Literal["ready", "not_ready"]
+    neutral_gate_enabled: bool | None = None
+    neutral_gate_model_version: str | None = None
 
     @property
     def is_ready(self) -> bool:
@@ -500,13 +577,9 @@ class AIServiceClient:
         url = self._base_url.join(endpoint)
         headers = {"Accept": "application/json"}
         if self._auth_token is not None:
-            headers["Authorization"] = (
-                f"Bearer {self._auth_token.get_secret_value()}"
-            )
+            headers["Authorization"] = f"Bearer {self._auth_token.get_secret_value()}"
         request_json = (
-            request_model.model_dump(mode="json")
-            if request_model is not None
-            else None
+            request_model.model_dump(mode="json") if request_model is not None else None
         )
         started_at = perf_counter()
         try:

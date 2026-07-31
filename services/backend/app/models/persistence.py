@@ -177,7 +177,7 @@ class EmotionAnalysisResult(Base):
     __tablename__ = "emotion_analysis_results"
     __table_args__ = (
         CheckConstraint(
-            "confidence >= 0 AND confidence <= 1",
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
             name="ck_emotion_confidence",
         ),
         CheckConstraint(
@@ -195,22 +195,66 @@ class EmotionAnalysisResult(Base):
             "('기쁨', '불안', '당황', '분노', '슬픔', '상처') "
             "AND emotion = predicted_emotion "
             "AND provisional = 0 "
+            "AND confidence IS NOT NULL "
+            "AND probabilities IS NOT NULL "
             "AND margin IS NULL "
-            "AND threshold_version IS NULL"
+            "AND threshold_version IS NULL "
+            "AND neutral_gate_decision IS NULL "
+            "AND neutral_gate_score IS NULL "
+            "AND neutral_gate_model_version IS NULL "
+            "AND neutral_gate_threshold IS NULL"
             ") OR ("
             "taxonomy_version = 'v2' "
-            "AND predicted_emotion IN "
-            "('분노', '기쁨', '불안', '당황', '슬픔', '무기력') "
-            "AND margin IS NOT NULL "
             "AND threshold_version IS NOT NULL "
             "AND length(trim(threshold_version)) > 0 "
+            "AND ("
+            "("
+            "neutral_gate_decision = 'neutral' "
+            "AND predicted_emotion IS NULL "
+            "AND emotion IS NULL "
+            "AND confidence IS NULL "
+            "AND margin IS NULL "
+            "AND probabilities IS NULL "
+            "AND provisional = 1 "
+            "AND is_uncertain = 1"
+            ") OR ("
+            "predicted_emotion IN "
+            "('분노', '기쁨', '불안', '당황', '슬픔', '무기력') "
+            "AND confidence IS NOT NULL "
+            "AND margin IS NOT NULL "
+            "AND probabilities IS NOT NULL "
             "AND provisional = is_uncertain "
             "AND ("
             "(provisional = 1 AND emotion IS NULL) "
             "OR (provisional = 0 AND emotion = predicted_emotion)"
             ")"
+            ")"
+            ")"
             ")",
             name="ck_emotion_taxonomy_payload",
+        ),
+        CheckConstraint(
+            "("
+            "neutral_gate_decision IS NULL "
+            "AND neutral_gate_score IS NULL "
+            "AND neutral_gate_model_version IS NULL "
+            "AND neutral_gate_threshold IS NULL"
+            ") OR ("
+            "neutral_gate_decision IN ('neutral', 'emotional') "
+            "AND neutral_gate_score IS NOT NULL "
+            "AND neutral_gate_score >= 0 AND neutral_gate_score <= 1 "
+            "AND neutral_gate_model_version IS NOT NULL "
+            "AND length(trim(neutral_gate_model_version)) > 0 "
+            "AND neutral_gate_threshold IS NOT NULL "
+            "AND neutral_gate_threshold >= 0 AND neutral_gate_threshold <= 1 "
+            "AND ("
+            "(neutral_gate_decision = 'neutral' "
+            "AND (1 - neutral_gate_score) < neutral_gate_threshold) "
+            "OR (neutral_gate_decision = 'emotional' "
+            "AND (1 - neutral_gate_score) >= neutral_gate_threshold)"
+            ")"
+            ")",
+            name="ck_emotion_neutral_gate_provenance",
         ),
         CheckConstraint(
             "margin IS NULL OR (margin >= 0 AND margin <= 1)",
@@ -247,17 +291,16 @@ class EmotionAnalysisResult(Base):
         server_default="v1",
         nullable=False,
     )
-    predicted_emotion: Mapped[str] = mapped_column(String(16), nullable=False)
+    predicted_emotion: Mapped[str | None] = mapped_column(String(16))
     emotion: Mapped[str | None] = mapped_column(String(16))
-    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    confidence: Mapped[float | None] = mapped_column(Float)
     is_uncertain: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,
     )
-    probabilities: Mapped[dict[str, float]] = mapped_column(
-        StrictJSON(),
-        nullable=False,
+    probabilities: Mapped[dict[str, float] | None] = mapped_column(
+        StrictJSON(none_as_null=True)
     )
     margin: Mapped[float | None] = mapped_column(Float)
     provisional: Mapped[bool] = mapped_column(
@@ -267,6 +310,10 @@ class EmotionAnalysisResult(Base):
         nullable=False,
     )
     threshold_version: Mapped[str | None] = mapped_column(String(64))
+    neutral_gate_decision: Mapped[str | None] = mapped_column(String(16))
+    neutral_gate_score: Mapped[float | None] = mapped_column(Float)
+    neutral_gate_model_version: Mapped[str | None] = mapped_column(String(128))
+    neutral_gate_threshold: Mapped[float | None] = mapped_column(Float)
     input_hash: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),

@@ -32,9 +32,7 @@ def _response_payload() -> dict[str, object]:
 
 def _v2_response_payload() -> dict[str, object]:
     return copy.deepcopy(
-        _schema("remind_coarse_emotion_inference_response.schema.json")[
-            "examples"
-        ][0]
+        _schema("remind_coarse_emotion_inference_response.schema.json")["examples"][0]
     )
 
 
@@ -117,12 +115,8 @@ def test_shared_response_contract_enforces_expressible_cross_field_rules() -> No
 
 
 def test_v2_contract_and_pydantic_use_the_frozen_model_label_order() -> None:
-    request_schema = _schema(
-        "remind_coarse_emotion_inference_request.schema.json"
-    )
-    response_schema = _schema(
-        "remind_coarse_emotion_inference_response.schema.json"
-    )
+    request_schema = _schema("remind_coarse_emotion_inference_request.schema.json")
+    response_schema = _schema("remind_coarse_emotion_inference_response.schema.json")
     Draft202012Validator.check_schema(request_schema)
     Draft202012Validator.check_schema(response_schema)
 
@@ -183,3 +177,20 @@ def test_v2_abstention_preserves_raw_prediction_and_nulls_product_emotion() -> N
     wrong_margin["margin"] = 0.10
     with pytest.raises(ValidationError, match="top-one/top-two"):
         RemindCoarseEmotionInferenceResponse.model_validate(wrong_margin)
+
+
+def test_v2_neutral_gate_contract_nulls_six_class_outputs() -> None:
+    schema = _schema("remind_coarse_emotion_inference_response.schema.json")
+    validator = Draft202012Validator(schema)
+    payload = copy.deepcopy(schema["examples"][1])
+    assert validator.is_valid(payload)
+    response = RemindCoarseEmotionInferenceResponse.model_validate(payload)
+    assert response.neutral_gate_decision == "neutral"
+    assert response.predicted_emotion is None
+    assert response.probabilities is None
+
+    missing_provenance = copy.deepcopy(payload)
+    missing_provenance.pop("neutral_gate_threshold")
+    assert not validator.is_valid(missing_provenance)
+    with pytest.raises(ValidationError, match="neutral gate provenance"):
+        RemindCoarseEmotionInferenceResponse.model_validate(missing_provenance)

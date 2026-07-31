@@ -13,6 +13,7 @@ data/*
 !data/evaluation/
 data/evaluation/*
 !data/evaluation/remind_diary_eval.csv
+!data/evaluation/neutral_gate_regression_v1.jsonl
 !data/synthetic/
 !data/synthetic/**
 !data/raw/

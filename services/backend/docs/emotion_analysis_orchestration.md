@@ -27,10 +27,16 @@ with facts recoverable from the old storage contract: `taxonomy_version=v1`,
 `emotion=predicted_emotion`, `provisional=false`, and null v2 threshold
 provenance.
 
-For v2, `predicted_emotion` always preserves model argmax. When confidence or
-margin does not satisfy the versioned abstention policy, `emotion` is null and
-`provisional` is true. This is a successful analysis with preserved
-provenance, not a downstream call failure.
+For v2 emotional inputs, `predicted_emotion` preserves the six-class model
+argmax. When confidence or margin does not satisfy the versioned abstention
+policy, `emotion` is null and `provisional` is true. This is a successful
+analysis with preserved provenance, not a downstream call failure.
+
+When the optional KLUE-RoBERTa neutral gate selects `neutral`, the six-class
+model is not invoked. The stored row keeps the gate decision, neutral score,
+gate model version, and gate threshold while `predicted_emotion`, `emotion`,
+`confidence`, `margin`, and `probabilities` are null. This row remains
+append-only provenance, but the Risk Adapter passes no emotion signal.
 
 The current persistence model has no daily-record provenance foreign key, so
 the API associates the result through the verified user and `record_date`.

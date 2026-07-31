@@ -21,6 +21,7 @@ from app.clients.ai import (
     CoarseEmotionRequest,
     CoarseEmotionResponse,
     CoarseEmotionTopPrediction,
+    UncertaintyReason,
 )
 from app.domain.risk.engine import BurnoutRiskEngine
 from app.domain.risk.models import (
@@ -93,45 +94,30 @@ class FakeAIServiceClient:
         )
 
 
-class AbstainingAIServiceClient:
+class NeutralGateAIServiceClient:
     async def classify_emotion(
         self,
         request: CoarseEmotionRequest,
     ) -> CoarseEmotionResponse:
         del request
-        probabilities = {
-            CoarseEmotionLabel.ANGER: 0.05,
-            CoarseEmotionLabel.JOY: 0.05,
-            CoarseEmotionLabel.ANXIETY: 0.40,
-            CoarseEmotionLabel.EMBARRASSMENT: 0.05,
-            CoarseEmotionLabel.SADNESS: 0.35,
-            CoarseEmotionLabel.LETHARGY: 0.10,
-        }
         return CoarseEmotionResponse(
             taxonomy_version="v2",
             model_version="coarse-test-v2",
-            threshold_version="mvp-v1",
-            predicted_emotion=CoarseEmotionLabel.ANXIETY,
-            predicted_label_id=2,
+            threshold_version="mvp-v2-neutral-gate",
+            predicted_emotion=None,
+            predicted_label_id=None,
             emotion=None,
-            confidence=0.40,
-            margin=0.05,
+            confidence=None,
+            margin=None,
             provisional=True,
             is_uncertain=True,
-            uncertainty_reason="small_margin",
-            probabilities=probabilities,
-            top_predictions=[
-                CoarseEmotionTopPrediction(
-                    emotion=CoarseEmotionLabel.ANXIETY,
-                    label_id=2,
-                    probability=0.40,
-                ),
-                CoarseEmotionTopPrediction(
-                    emotion=CoarseEmotionLabel.SADNESS,
-                    label_id=4,
-                    probability=0.35,
-                ),
-            ],
+            uncertainty_reason=UncertaintyReason.NEUTRAL_GATE,
+            probabilities=None,
+            top_predictions=None,
+            neutral_gate_decision="neutral",
+            neutral_gate_score=0.96,
+            neutral_gate_model_version="neutral-gate-test-v1",
+            neutral_gate_threshold=0.62,
             latency_ms=1.0,
         )
 
@@ -796,7 +782,7 @@ def test_daily_emotion_baseline_and_risk_apis_form_user_scoped_flow(
     assert client.get(BASE_PATH, headers=other_headers).json() == []
 
 
-def test_abstained_v2_emotion_keeps_provenance_but_risk_uses_behavior_only(
+def test_neutral_gate_result_keeps_provenance_but_risk_uses_behavior_only(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -817,7 +803,7 @@ def test_abstained_v2_emotion_keeps_provenance_but_risk_uses_behavior_only(
     application = cast(FastAPI, client.app)
     application.dependency_overrides[get_ai_service_client] = lambda: cast(
         AIServiceClient,
-        AbstainingAIServiceClient(),
+        NeutralGateAIServiceClient(),
     )
     try:
         emotion = client.post(
@@ -835,6 +821,7 @@ def test_abstained_v2_emotion_keeps_provenance_but_risk_uses_behavior_only(
     assert emotion.status_code == 201, emotion.text
     assert emotion.json()["emotion"] is None
     assert emotion.json()["provisional"] is True
+    assert emotion.json()["neutral_gate_decision"] == "neutral"
 
     baseline = client.post(
         "/api/v1/baselines",

@@ -21,17 +21,33 @@ def create_emotion_result(
         analyzed_at=payload.analyzed_at,
         taxonomy_version=payload.taxonomy_version.value,
         model_version=payload.model_version,
-        predicted_emotion=payload.predicted_emotion.value,
+        predicted_emotion=(
+            payload.predicted_emotion.value
+            if payload.predicted_emotion is not None
+            else None
+        ),
         emotion=payload.emotion.value if payload.emotion is not None else None,
         confidence=payload.confidence,
         margin=payload.margin,
         provisional=payload.provisional,
         is_uncertain=payload.is_uncertain,
-        probabilities={
-            label.value: probability
-            for label, probability in payload.probabilities.items()
-        },
+        probabilities=(
+            {
+                label.value: probability
+                for label, probability in payload.probabilities.items()
+            }
+            if payload.probabilities is not None
+            else None
+        ),
         threshold_version=payload.threshold_version,
+        neutral_gate_decision=(
+            payload.neutral_gate_decision.value
+            if payload.neutral_gate_decision is not None
+            else None
+        ),
+        neutral_gate_score=payload.neutral_gate_score,
+        neutral_gate_model_version=payload.neutral_gate_model_version,
+        neutral_gate_threshold=payload.neutral_gate_threshold,
         input_hash=payload.input_hash,
     )
     session.add(result)

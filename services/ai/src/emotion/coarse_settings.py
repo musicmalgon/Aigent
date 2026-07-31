@@ -11,6 +11,7 @@ TRAINING_MAX_LENGTH = 128
 MVP_V1_CONFIDENCE_THRESHOLD = 0.65
 MVP_V1_MARGIN_THRESHOLD = 0.15
 MVP_V1_THRESHOLD_VERSION = "mvp-v1"
+NEUTRAL_GATE_THRESHOLD_VERSION = "mvp-v2-neutral-gate"
 
 
 def _optional_path(value: str | None) -> Path | None:
@@ -19,9 +20,7 @@ def _optional_path(value: str | None) -> Path | None:
     return Path(value.strip())
 
 
-def _bounded_float(
-    environment: Mapping[str, str], name: str, default: float
-) -> float:
+def _bounded_float(environment: Mapping[str, str], name: str, default: float) -> float:
     raw = environment.get(name)
     try:
         value = default if raw is None else float(raw)
@@ -48,6 +47,22 @@ def _bounded_int(
     if not minimum <= value <= maximum:
         raise ValueError(f"{name} must be between {minimum} and {maximum}")
     return value
+
+
+def _environment_bool(
+    environment: Mapping[str, str],
+    name: str,
+    default: bool,
+) -> bool:
+    raw = environment.get(name)
+    if raw is None or not raw.strip():
+        return default
+    normalized = raw.strip().casefold()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean")
 
 
 @dataclass(frozen=True)
@@ -81,8 +96,7 @@ class CoarseEmotionSettings:
             or self.margin_threshold != MVP_V1_MARGIN_THRESHOLD
         ):
             raise ValueError(
-                "mvp-v1 requires confidence_threshold=0.65 and "
-                "margin_threshold=0.15"
+                "mvp-v1 requires confidence_threshold=0.65 and margin_threshold=0.15"
             )
         if not 1 <= self.top_k <= 6:
             raise ValueError("top_k must be between 1 and 6")
@@ -111,9 +125,7 @@ class CoarseEmotionSettings:
             artifact_dir=_optional_path(values.get("EMOTION_ARTIFACT_DIR")),
             model_dir=_optional_path(values.get("EMOTION_MODEL_DIR")),
             tokenizer_dir=_optional_path(values.get("EMOTION_TOKENIZER_DIR")),
-            label_mapping_path=_optional_path(
-                values.get("EMOTION_LABEL_MAPPING_PATH")
-            ),
+            label_mapping_path=_optional_path(values.get("EMOTION_LABEL_MAPPING_PATH")),
             device=device,
             max_length=_bounded_int(
                 values,
@@ -144,10 +156,98 @@ class CoarseEmotionSettings:
         )
 
 
+@dataclass(frozen=True)
+class NeutralGateSettings:
+    enabled: bool = False
+    artifact_dir: Path | None = None
+    threshold_override: float | None = None
+    model_version_override: str | None = None
+    threshold_version: str = NEUTRAL_GATE_THRESHOLD_VERSION
+    device: str = "auto"
+    max_length: int = TRAINING_MAX_LENGTH
+
+    def __post_init__(self) -> None:
+        if self.enabled and self.artifact_dir is None:
+            raise ValueError(
+                "EMOTION_NEUTRAL_GATE_ARTIFACT_DIR is required when the gate is enabled"
+            )
+        if self.threshold_override is not None and not (
+            0.0 <= self.threshold_override <= 1.0
+        ):
+            raise ValueError("neutral gate threshold override must be between 0 and 1")
+        if (
+            self.model_version_override is not None
+            and not self.model_version_override.strip()
+        ):
+            raise ValueError("neutral gate model version override must not be empty")
+        if not self.threshold_version.strip():
+            raise ValueError("neutral gate threshold version must not be empty")
+        if self.device not in {"auto", "cpu", "cuda", "mps"}:
+            raise ValueError("neutral gate device must be auto, cpu, cuda, or mps")
+        if self.max_length != TRAINING_MAX_LENGTH:
+            raise ValueError(
+                f"neutral gate max length must match {TRAINING_MAX_LENGTH}"
+            )
+
+    @classmethod
+    def from_env(
+        cls,
+        environment: Mapping[str, str] | None = None,
+    ) -> NeutralGateSettings:
+        values = os.environ if environment is None else environment
+        raw_threshold = values.get("EMOTION_NEUTRAL_GATE_THRESHOLD", "").strip()
+        model_version = values.get(
+            "EMOTION_NEUTRAL_GATE_MODEL_VERSION",
+            "",
+        ).strip()
+        device = (
+            values.get(
+                "EMOTION_NEUTRAL_GATE_DEVICE",
+                values.get("EMOTION_DEVICE", "auto"),
+            )
+            .strip()
+            .casefold()
+        )
+        return cls(
+            enabled=_environment_bool(
+                values,
+                "EMOTION_NEUTRAL_GATE_ENABLED",
+                False,
+            ),
+            artifact_dir=_optional_path(
+                values.get("EMOTION_NEUTRAL_GATE_ARTIFACT_DIR")
+            ),
+            threshold_override=(
+                _bounded_float(
+                    values,
+                    "EMOTION_NEUTRAL_GATE_THRESHOLD",
+                    0.5,
+                )
+                if raw_threshold
+                else None
+            ),
+            model_version_override=model_version or None,
+            threshold_version=values.get(
+                "EMOTION_NEUTRAL_GATE_THRESHOLD_VERSION",
+                NEUTRAL_GATE_THRESHOLD_VERSION,
+            ).strip(),
+            device=device,
+            max_length=_bounded_int(
+                values,
+                "EMOTION_NEUTRAL_GATE_MAX_LENGTH",
+                TRAINING_MAX_LENGTH,
+                minimum=2,
+                maximum=4096,
+            ),
+        )
+
+
 __all__ = [
     "MVP_V1_CONFIDENCE_THRESHOLD",
     "MVP_V1_MARGIN_THRESHOLD",
     "MVP_V1_THRESHOLD_VERSION",
+    "NEUTRAL_GATE_THRESHOLD_VERSION",
     "TRAINING_MAX_LENGTH",
     "CoarseEmotionSettings",
+    "NeutralGateSettings",
 ]

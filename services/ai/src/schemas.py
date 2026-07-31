@@ -190,6 +190,12 @@ class UncertaintyReason(str, Enum):
     LOW_CONFIDENCE = "low_confidence"
     SMALL_MARGIN = "small_margin"
     LOW_CONFIDENCE_AND_SMALL_MARGIN = "low_confidence_and_small_margin"
+    NEUTRAL_GATE = "neutral_gate"
+
+
+class NeutralGateDecision(str, Enum):
+    NEUTRAL = "neutral"
+    EMOTIONAL = "emotional"
 
 
 class CauseTag(str, Enum):
@@ -635,28 +641,100 @@ class RemindCoarseEmotionInferenceResponse(_SchemaModel):
     taxonomy_version: Literal["v2"]
     model_version: NonEmptyString
     threshold_version: NonEmptyString
-    predicted_emotion: RemindCoarseEmotionLabel
-    predicted_label_id: Annotated[JsonInteger, Field(ge=0, le=5)]
+    predicted_emotion: RemindCoarseEmotionLabel | None
+    predicted_label_id: Annotated[JsonInteger, Field(ge=0, le=5)] | None
     emotion: RemindCoarseEmotionLabel | None
-    confidence: Confidence
-    margin: Confidence
+    confidence: Confidence | None
+    margin: Confidence | None
     provisional: StrictBool
     is_uncertain: StrictBool
     uncertainty_reason: UncertaintyReason | None
-    probabilities: Annotated[
-        dict[RemindCoarseEmotionLabel, Confidence],
-        Field(min_length=6, max_length=6),
-    ]
-    top_predictions: Annotated[
-        list[RemindCoarseEmotionTopPrediction],
-        Field(min_length=1, max_length=6),
-    ]
+    probabilities: (
+        Annotated[
+            dict[RemindCoarseEmotionLabel, Confidence],
+            Field(min_length=6, max_length=6),
+        ]
+        | None
+    )
+    top_predictions: (
+        Annotated[
+            list[RemindCoarseEmotionTopPrediction],
+            Field(min_length=1, max_length=6),
+        ]
+        | None
+    )
+    neutral_gate_decision: NeutralGateDecision | None = None
+    neutral_gate_score: Confidence | None = None
+    neutral_gate_model_version: NonEmptyString | None = None
+    neutral_gate_threshold: Confidence | None = None
     latency_ms: NonNegativeFloat
 
     @model_validator(mode="after")
     def validate_prediction_consistency(
         self,
     ) -> RemindCoarseEmotionInferenceResponse:
+        gate_values = (
+            self.neutral_gate_decision,
+            self.neutral_gate_score,
+            self.neutral_gate_model_version,
+            self.neutral_gate_threshold,
+        )
+        gate_configured = any(value is not None for value in gate_values)
+        if gate_configured and any(value is None for value in gate_values):
+            raise ValueError("neutral gate provenance must be complete")
+
+        if self.neutral_gate_decision is NeutralGateDecision.NEUTRAL:
+            assert self.neutral_gate_score is not None
+            assert self.neutral_gate_threshold is not None
+            emotional_score = 1.0 - self.neutral_gate_score
+            if emotional_score >= self.neutral_gate_threshold:
+                raise ValueError("neutral gate decision does not match its threshold")
+            if any(
+                value is not None
+                for value in (
+                    self.predicted_emotion,
+                    self.predicted_label_id,
+                    self.emotion,
+                    self.confidence,
+                    self.margin,
+                    self.probabilities,
+                    self.top_predictions,
+                )
+            ):
+                raise ValueError("neutral gate results cannot contain emotion output")
+            if (
+                not self.provisional
+                or not self.is_uncertain
+                or self.uncertainty_reason is not UncertaintyReason.NEUTRAL_GATE
+            ):
+                raise ValueError("neutral gate results must be provisional")
+            return self
+
+        if self.neutral_gate_decision is NeutralGateDecision.EMOTIONAL:
+            assert self.neutral_gate_score is not None
+            assert self.neutral_gate_threshold is not None
+            emotional_score = 1.0 - self.neutral_gate_score
+            if emotional_score < self.neutral_gate_threshold:
+                raise ValueError("emotional gate decision does not match its threshold")
+
+        if any(
+            value is None
+            for value in (
+                self.predicted_emotion,
+                self.predicted_label_id,
+                self.confidence,
+                self.margin,
+                self.probabilities,
+                self.top_predictions,
+            )
+        ):
+            raise ValueError("emotion output is required when the neutral gate passes")
+        assert self.predicted_emotion is not None
+        assert self.predicted_label_id is not None
+        assert self.confidence is not None
+        assert self.margin is not None
+        assert self.probabilities is not None
+        assert self.top_predictions is not None
         if set(self.probabilities) != set(REMIND_COARSE_EMOTION_LABELS):
             raise ValueError("probabilities must contain exactly the six v2 labels")
         probability_sum = sum(self.probabilities.values())
@@ -673,10 +751,7 @@ class RemindCoarseEmotionInferenceResponse(_SchemaModel):
         winner, winner_probability = ordered[0]
         if self.predicted_emotion is not winner:
             raise ValueError("predicted_emotion must be the maximum probability label")
-        if (
-            self.predicted_label_id
-            != REMIND_COARSE_EMOTION_LABEL_TO_ID[winner]
-        ):
+        if self.predicted_label_id != REMIND_COARSE_EMOTION_LABEL_TO_ID[winner]:
             raise ValueError("predicted_label_id does not match predicted_emotion")
         if not math.isclose(
             self.confidence,
@@ -712,6 +787,10 @@ class RemindCoarseEmotionInferenceResponse(_SchemaModel):
             raise ValueError("uncertainty_reason must match is_uncertain")
         if self.provisional != self.is_uncertain:
             raise ValueError("provisional must match is_uncertain")
+        if self.uncertainty_reason is UncertaintyReason.NEUTRAL_GATE:
+            raise ValueError(
+                "neutral_gate uncertainty requires a neutral gate decision"
+            )
         expected_emotion = None if self.provisional else winner
         if self.emotion is not expected_emotion:
             raise ValueError("emotion must be null exactly when provisional")

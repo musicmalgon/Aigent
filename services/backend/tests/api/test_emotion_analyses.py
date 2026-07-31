@@ -398,9 +398,72 @@ def test_v2_abstention_is_saved_as_provenance_not_call_failure(
         assert stored.emotion is None
         assert stored.provisional is True
         assert stored.probabilities == {
-            label.value: probability
-            for label, probability in probabilities.items()
+            label.value: probability for label, probability in probabilities.items()
         }
+
+
+def test_neutral_gate_result_is_persisted_without_emotion_signal(
+    app_settings: Settings,
+    migrated_engine: Engine,
+) -> None:
+    payload = {
+        "taxonomy_version": "v2",
+        "model_version": "coarse-v2-e25e28",
+        "threshold_version": "mvp-v2-neutral-gate",
+        "predicted_emotion": None,
+        "predicted_label_id": None,
+        "emotion": None,
+        "confidence": None,
+        "margin": None,
+        "provisional": True,
+        "is_uncertain": True,
+        "uncertainty_reason": "neutral_gate",
+        "probabilities": None,
+        "top_predictions": None,
+        "neutral_gate_decision": "neutral",
+        "neutral_gate_score": 0.91,
+        "neutral_gate_model_version": "neutral-gate-klue-roberta-v1",
+        "neutral_gate_threshold": 0.62,
+        "latency_ms": 2.5,
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return json_response(request, payload)
+
+    with emotion_api_client(app_settings, migrated_engine, handler) as client:
+        headers, user_id = authenticated_headers(
+            client,
+            email="neutral-gate@example.com",
+        )
+        create_daily_record(client, headers)
+        response = client.post(
+            BASE_PATH,
+            headers=headers,
+            json={
+                "record_date": RECORD_DATE,
+                "hs01": "오늘 오전에 수업에 갔어.",
+                "hs02": "점심을 먹고 과제를 마쳤어.",
+            },
+        )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["user_id"] == user_id
+    assert body["predicted_emotion"] is None
+    assert body["emotion"] is None
+    assert body["confidence"] is None
+    assert body["probabilities"] is None
+    assert body["provisional"] is True
+    assert body["neutral_gate_decision"] == "neutral"
+    assert body["neutral_gate_score"] == pytest.approx(0.91)
+
+    with Session(migrated_engine) as session:
+        stored = session.scalar(select(EmotionAnalysisResult))
+        assert stored is not None
+        assert stored.predicted_emotion is None
+        assert stored.probabilities is None
+        assert stored.neutral_gate_decision == "neutral"
+        assert stored.neutral_gate_model_version == "neutral-gate-klue-roberta-v1"
 
 
 def test_missing_daily_record_returns_not_found_before_ai_call(
@@ -916,17 +979,21 @@ def test_openapi_declares_minimal_authenticated_contract(
     assert {
         "id",
         "user_id",
-            "record_date",
-            "analyzed_at",
-            "taxonomy_version",
-            "model_version",
-            "predicted_emotion",
-            "emotion",
-            "confidence",
-            "margin",
-            "provisional",
-            "is_uncertain",
-            "probabilities",
-            "threshold_version",
-            "created_at",
+        "record_date",
+        "analyzed_at",
+        "taxonomy_version",
+        "model_version",
+        "predicted_emotion",
+        "emotion",
+        "confidence",
+        "margin",
+        "provisional",
+        "is_uncertain",
+        "probabilities",
+        "threshold_version",
+        "neutral_gate_decision",
+        "neutral_gate_score",
+        "neutral_gate_model_version",
+        "neutral_gate_threshold",
+        "created_at",
     } == set(response_schema["properties"])

@@ -149,7 +149,11 @@ def _emotion_snapshot(
             "model_version": emotion_result.model_version,
             "predicted_emotion": emotion_result.predicted_emotion,
             "emotion": emotion_result.emotion,
-            "confidence": float(emotion_result.confidence),
+            "confidence": (
+                float(emotion_result.confidence)
+                if emotion_result.confidence is not None
+                else None
+            ),
             "margin": (
                 float(emotion_result.margin)
                 if emotion_result.margin is not None
@@ -159,6 +163,10 @@ def _emotion_snapshot(
             "is_uncertain": emotion_result.is_uncertain,
             "probabilities": emotion_result.probabilities,
             "threshold_version": emotion_result.threshold_version,
+            "neutral_gate_decision": emotion_result.neutral_gate_decision,
+            "neutral_gate_score": emotion_result.neutral_gate_score,
+            "neutral_gate_model_version": (emotion_result.neutral_gate_model_version),
+            "neutral_gate_threshold": emotion_result.neutral_gate_threshold,
             "input_hash": emotion_result.input_hash,
         }
     )
@@ -174,9 +182,7 @@ def _baseline_snapshot(baseline: BehavioralBaseline) -> str:
             "window_end": baseline.window_end,
             "sample_days": baseline.sample_days,
             "sleep_minutes": normalized(baseline.sleep_minutes),
-            "study_work_minutes": normalized(
-                baseline.study_work_minutes
-            ),
+            "study_work_minutes": normalized(baseline.study_work_minutes),
             "rest_minutes": normalized(baseline.rest_minutes),
             "exercise_minutes": normalized(baseline.exercise_minutes),
             "schedule_count": normalized(baseline.schedule_count),
@@ -260,9 +266,7 @@ def prepare_risk_evaluation(
         record_date=record_date,
         time_zone=daily_contract.time_zone,
         daily_record_id=daily_record.id,
-        emotion_result_id=(
-            emotion_result.id if emotion_result is not None else None
-        ),
+        emotion_result_id=(emotion_result.id if emotion_result is not None else None),
         baseline_id=baseline.id,
         request=request,
         daily_snapshot=daily_snapshot,
@@ -296,9 +300,7 @@ def store_prepared_risk_evaluation(
     """Revalidate provenance and stage one append-only evaluation insert."""
 
     if session.in_transaction():
-        raise RuntimeError(
-            "risk evaluation write phase requires a fresh transaction"
-        )
+        raise RuntimeError("risk evaluation write phase requires a fresh transaction")
 
     daily_record = get_daily_record(
         session,

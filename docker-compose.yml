@@ -21,10 +21,11 @@ services:
     env_file:
       - ./services/ai/.env
     environment:
-      EMOTION_MODEL_DIR: /models/current
-      EMOTION_TOKENIZER_DIR: /models/current
+      EMOTION_ARTIFACT_DIR: /models/current
+      EMOTION_NEUTRAL_GATE_ARTIFACT_DIR: /models/neutral-gate
     volumes:
       - ./model-artifacts:/models/current:ro
+      - ./neutral-gate-artifacts:/models/neutral-gate:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/live')"]
       interval: 10s

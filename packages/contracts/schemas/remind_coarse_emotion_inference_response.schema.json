@@ -37,10 +37,13 @@
       "pattern": "\\S"
     },
     "predicted_emotion": {
-      "$ref": "#/$defs/emotionLabel"
+      "oneOf": [
+        { "$ref": "#/$defs/emotionLabel" },
+        { "type": "null" }
+      ]
     },
     "predicted_label_id": {
-      "type": "integer",
+      "type": ["integer", "null"],
       "minimum": 0,
       "maximum": 5
     },
@@ -55,10 +58,16 @@
       ]
     },
     "confidence": {
-      "$ref": "#/$defs/probability"
+      "oneOf": [
+        { "$ref": "#/$defs/probability" },
+        { "type": "null" }
+      ]
     },
     "margin": {
-      "$ref": "#/$defs/probability"
+      "oneOf": [
+        { "$ref": "#/$defs/probability" },
+        { "type": "null" }
+      ]
     },
     "provisional": {
       "type": "boolean"
@@ -77,33 +86,55 @@
       ]
     },
     "probabilities": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "분노",
-        "기쁨",
-        "불안",
-        "당황",
-        "슬픔",
-        "무기력"
-      ],
-      "properties": {
-        "분노": { "$ref": "#/$defs/probability" },
-        "기쁨": { "$ref": "#/$defs/probability" },
-        "불안": { "$ref": "#/$defs/probability" },
-        "당황": { "$ref": "#/$defs/probability" },
-        "슬픔": { "$ref": "#/$defs/probability" },
-        "무기력": { "$ref": "#/$defs/probability" }
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["분노", "기쁨", "불안", "당황", "슬픔", "무기력"],
+          "properties": {
+            "분노": { "$ref": "#/$defs/probability" },
+            "기쁨": { "$ref": "#/$defs/probability" },
+            "불안": { "$ref": "#/$defs/probability" },
+            "당황": { "$ref": "#/$defs/probability" },
+            "슬픔": { "$ref": "#/$defs/probability" },
+            "무기력": { "$ref": "#/$defs/probability" }
+          }
+        },
+        { "type": "null" }
+      ]
     },
     "top_predictions": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 6,
-      "uniqueItems": true,
-      "items": {
-        "$ref": "#/$defs/topPrediction"
-      }
+      "oneOf": [
+        {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/topPrediction" }
+        },
+        { "type": "null" }
+      ]
+    },
+    "neutral_gate_decision": {
+      "type": ["string", "null"],
+      "enum": ["neutral", "emotional", null]
+    },
+    "neutral_gate_score": {
+      "oneOf": [
+        { "$ref": "#/$defs/probability" },
+        { "type": "null" }
+      ]
+    },
+    "neutral_gate_model_version": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "neutral_gate_threshold": {
+      "oneOf": [
+        { "$ref": "#/$defs/probability" },
+        { "type": "null" }
+      ]
     },
     "latency_ms": {
       "type": "number",
@@ -160,6 +191,52 @@
           "is_uncertain": { "const": false }
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "neutral_gate_decision": { "const": "neutral" } },
+        "required": ["neutral_gate_decision"]
+      },
+      "then": {
+        "required": [
+          "neutral_gate_score",
+          "neutral_gate_model_version",
+          "neutral_gate_threshold"
+        ],
+        "properties": {
+          "predicted_emotion": { "type": "null" },
+          "predicted_label_id": { "type": "null" },
+          "emotion": { "type": "null" },
+          "confidence": { "type": "null" },
+          "margin": { "type": "null" },
+          "probabilities": { "type": "null" },
+          "top_predictions": { "type": "null" },
+          "provisional": { "const": true },
+          "is_uncertain": { "const": true },
+          "uncertainty_reason": { "const": "neutral_gate" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "neutral_gate_decision": { "const": "emotional" } },
+        "required": ["neutral_gate_decision"]
+      },
+      "then": {
+        "required": [
+          "neutral_gate_score",
+          "neutral_gate_model_version",
+          "neutral_gate_threshold"
+        ],
+        "properties": {
+          "predicted_emotion": { "$ref": "#/$defs/emotionLabel" },
+          "predicted_label_id": { "type": "integer" },
+          "confidence": { "$ref": "#/$defs/probability" },
+          "margin": { "$ref": "#/$defs/probability" },
+          "probabilities": { "type": "object" },
+          "top_predictions": { "type": "array" }
+        }
+      }
     }
   ],
   "$defs": {
@@ -184,7 +261,8 @@
       "enum": [
         "low_confidence",
         "small_margin",
-        "low_confidence_and_small_margin"
+        "low_confidence_and_small_margin",
+        "neutral_gate"
       ]
     },
     "topPrediction": {
@@ -270,6 +348,26 @@
         }
       ],
       "latency_ms": 18.4
+    },
+    {
+      "taxonomy_version": "v2",
+      "model_version": "klue-roberta-remind-coarse-v2-e25e28",
+      "threshold_version": "mvp-v2-neutral-gate",
+      "predicted_emotion": null,
+      "predicted_label_id": null,
+      "emotion": null,
+      "confidence": null,
+      "margin": null,
+      "provisional": true,
+      "is_uncertain": true,
+      "uncertainty_reason": "neutral_gate",
+      "probabilities": null,
+      "top_predictions": null,
+      "neutral_gate_decision": "neutral",
+      "neutral_gate_score": 0.961,
+      "neutral_gate_model_version": "neutral-gate-klue-roberta-v1",
+      "neutral_gate_threshold": 0.62,
+      "latency_ms": 10.2
     }
   ]
 }

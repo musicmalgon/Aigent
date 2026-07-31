@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
@@ -18,6 +19,7 @@ from app.schemas.persistence import (
     EmotionResultCreate,
     EmotionTaxonomyVersion,
     EmotionV2Label,
+    NeutralGateDecision,
 )
 
 PERSISTENCE_LABEL_BY_AI_LABEL = {
@@ -36,9 +38,11 @@ def map_ai_response_to_persistence(
         taxonomy_version=EmotionTaxonomyVersion.V2,
         model_version=response.model_version,
         threshold_version=response.threshold_version,
-        predicted_emotion=PERSISTENCE_LABEL_BY_AI_LABEL[
-            response.predicted_emotion
-        ],
+        predicted_emotion=(
+            PERSISTENCE_LABEL_BY_AI_LABEL[response.predicted_emotion]
+            if response.predicted_emotion is not None
+            else None
+        ),
         emotion=(
             PERSISTENCE_LABEL_BY_AI_LABEL[response.emotion]
             if response.emotion is not None
@@ -48,10 +52,22 @@ def map_ai_response_to_persistence(
         margin=response.margin,
         provisional=response.provisional,
         is_uncertain=response.is_uncertain,
-        probabilities={
-            PERSISTENCE_LABEL_BY_AI_LABEL[label]: probability
-            for label, probability in response.probabilities.items()
-        },
+        probabilities=(
+            {
+                PERSISTENCE_LABEL_BY_AI_LABEL[label]: probability
+                for label, probability in response.probabilities.items()
+            }
+            if response.probabilities is not None
+            else None
+        ),
+        neutral_gate_decision=(
+            NeutralGateDecision(response.neutral_gate_decision.value)
+            if response.neutral_gate_decision is not None
+            else None
+        ),
+        neutral_gate_score=response.neutral_gate_score,
+        neutral_gate_model_version=response.neutral_gate_model_version,
+        neutral_gate_threshold=response.neutral_gate_threshold,
         input_hash=None,
     )
 
@@ -63,10 +79,25 @@ def to_emotion_analysis_read(
         raise ValueError("public emotion analysis rows require record_date")
     taxonomy = EmotionTaxonomyVersion(result.taxonomy_version)
     label_type = (
-        EmotionV2Label
-        if taxonomy is EmotionTaxonomyVersion.V2
-        else EmotionLabel
+        EmotionV2Label if taxonomy is EmotionTaxonomyVersion.V2 else EmotionLabel
     )
+    mapped_probabilities: (
+        Mapping[EmotionLabel, float]
+        | Mapping[EmotionV2Label, float]
+        | None
+    )
+    if result.probabilities is None:
+        mapped_probabilities = None
+    elif taxonomy is EmotionTaxonomyVersion.V2:
+        mapped_probabilities = {
+            EmotionV2Label(label): probability
+            for label, probability in result.probabilities.items()
+        }
+    else:
+        mapped_probabilities = {
+            EmotionLabel(label): probability
+            for label, probability in result.probabilities.items()
+        }
     return EmotionAnalysisRead(
         id=result.id,
         user_id=result.user_id,
@@ -74,21 +105,26 @@ def to_emotion_analysis_read(
         analyzed_at=result.analyzed_at,
         taxonomy_version=taxonomy,
         model_version=result.model_version,
-        predicted_emotion=label_type(result.predicted_emotion),
-        emotion=(
-            label_type(result.emotion)
-            if result.emotion is not None
+        predicted_emotion=(
+            label_type(result.predicted_emotion)
+            if result.predicted_emotion is not None
             else None
         ),
+        emotion=(label_type(result.emotion) if result.emotion is not None else None),
         confidence=result.confidence,
         margin=result.margin,
         provisional=result.provisional,
         is_uncertain=result.is_uncertain,
-        probabilities={
-            label_type(label): probability
-            for label, probability in result.probabilities.items()
-        },
+        probabilities=mapped_probabilities,
         threshold_version=result.threshold_version,
+        neutral_gate_decision=(
+            NeutralGateDecision(result.neutral_gate_decision)
+            if result.neutral_gate_decision is not None
+            else None
+        ),
+        neutral_gate_score=result.neutral_gate_score,
+        neutral_gate_model_version=result.neutral_gate_model_version,
+        neutral_gate_threshold=result.neutral_gate_threshold,
         created_at=result.created_at,
     )
 

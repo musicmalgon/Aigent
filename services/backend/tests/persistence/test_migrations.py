@@ -85,9 +85,7 @@ def test_persistence_migration_schema(database_url: str) -> None:
             item["name"]: " ".join(item["sqltext"].split())
             for item in inspector.get_check_constraints("behavioral_baselines")
         }
-        baseline_fatigue_check = baseline_checks[
-            "ck_baseline_subjective_fatigue"
-        ]
+        baseline_fatigue_check = baseline_checks["ck_baseline_subjective_fatigue"]
         assert "subjective_fatigue >= 0" in baseline_fatigue_check
         assert "subjective_fatigue <= 10" not in baseline_fatigue_check
         emotion_columns = {
@@ -96,30 +94,40 @@ def test_persistence_migration_schema(database_url: str) -> None:
         assert emotion_columns == {
             "id",
             "user_id",
-                "record_date",
-                "analyzed_at",
-                "taxonomy_version",
-                "model_version",
-                "predicted_emotion",
-                "emotion",
-                "confidence",
-                "margin",
-                "provisional",
-                "is_uncertain",
-                "probabilities",
-                "threshold_version",
-                "input_hash",
-                "created_at",
-            }
+            "record_date",
+            "analyzed_at",
+            "taxonomy_version",
+            "model_version",
+            "predicted_emotion",
+            "emotion",
+            "confidence",
+            "margin",
+            "provisional",
+            "is_uncertain",
+            "probabilities",
+            "threshold_version",
+            "neutral_gate_decision",
+            "neutral_gate_score",
+            "neutral_gate_model_version",
+            "neutral_gate_threshold",
+            "input_hash",
+            "created_at",
+        }
         emotion_checks = {
             item["name"]: " ".join(item["sqltext"].split())
-            for item in inspector.get_check_constraints(
-                "emotion_analysis_results"
-            )
+            for item in inspector.get_check_constraints("emotion_analysis_results")
         }
         assert "무기력" in emotion_checks["ck_emotion_taxonomy_payload"]
         assert "상처" in emotion_checks["ck_emotion_taxonomy_payload"]
         assert "margin >= 0 AND margin <= 1" in emotion_checks["ck_emotion_margin"]
+        assert (
+            "neutral_gate_decision = 'neutral'"
+            in emotion_checks["ck_emotion_taxonomy_payload"]
+        )
+        assert (
+            "(1 - neutral_gate_score) < neutral_gate_threshold"
+            in emotion_checks["ck_emotion_neutral_gate_provenance"]
+        )
         unique_constraints = inspector.get_unique_constraints(
             "behavioral_daily_records"
         )
@@ -345,13 +353,15 @@ def test_downgrade_preflight_rejects_any_0003_only_field_data(
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
                 == "20260727_0003"
             )
-            assert connection.scalar(
-                text(
-                    "SELECT COUNT(*) FROM behavioral_daily_records "
-                    "WHERE id = :id"
-                ),
-                {"id": "lossy-downgrade-record"},
-            ) == 1
+            assert (
+                connection.scalar(
+                    text(
+                        "SELECT COUNT(*) FROM behavioral_daily_records WHERE id = :id"
+                    ),
+                    {"id": "lossy-downgrade-record"},
+                )
+                == 1
+            )
     finally:
         engine.dispose()
 
@@ -421,9 +431,7 @@ def test_baseline_fatigue_above_ten_is_preserved_at_head(
         with engine.connect() as connection:
             value = connection.scalar(
                 text(
-                    "SELECT subjective_fatigue "
-                    "FROM behavioral_baselines "
-                    "WHERE id = :id"
+                    "SELECT subjective_fatigue FROM behavioral_baselines WHERE id = :id"
                 ),
                 {"id": "baseline-fatigue"},
             )
@@ -485,14 +493,17 @@ def test_0004_downgrade_preflight_rejects_baseline_fatigue_above_ten(
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
                 == "20260729_0005"
             )
-            assert connection.scalar(
-                text(
-                    "SELECT subjective_fatigue "
-                    "FROM behavioral_baselines "
-                    "WHERE id = :id"
-                ),
-                {"id": "downgrade-baseline"},
-            ) == 12.5
+            assert (
+                connection.scalar(
+                    text(
+                        "SELECT subjective_fatigue "
+                        "FROM behavioral_baselines "
+                        "WHERE id = :id"
+                    ),
+                    {"id": "downgrade-baseline"},
+                )
+                == 12.5
+            )
     finally:
         engine.dispose()
 
@@ -545,14 +556,11 @@ def test_0004_downgrade_preserves_compatible_baseline_fatigue(
     try:
         inspector = inspect(engine)
         index_names = {
-            item["name"]
-            for item in inspector.get_indexes("behavioral_baselines")
+            item["name"] for item in inspector.get_indexes("behavioral_baselines")
         }
         fatigue_check = next(
             item["sqltext"]
-            for item in inspector.get_check_constraints(
-                "behavioral_baselines"
-            )
+            for item in inspector.get_check_constraints("behavioral_baselines")
             if item["name"] == "ck_baseline_subjective_fatigue"
         )
         with engine.connect() as connection:
@@ -561,19 +569,14 @@ def test_0004_downgrade_preserves_compatible_baseline_fatigue(
             )
             fatigue = connection.scalar(
                 text(
-                    "SELECT subjective_fatigue "
-                    "FROM behavioral_baselines "
-                    "WHERE id = :id"
+                    "SELECT subjective_fatigue FROM behavioral_baselines WHERE id = :id"
                 ),
                 {"id": "compatible-downgrade-baseline"},
             )
 
         assert revision == "20260727_0003"
         assert fatigue == 10
-        assert (
-            "ix_behavioral_baselines_user_status_window_end"
-            not in index_names
-        )
+        assert "ix_behavioral_baselines_user_status_window_end" not in index_names
         assert "subjective_fatigue <= 10" in " ".join(fatigue_check.split())
     finally:
         engine.dispose()
@@ -804,16 +807,68 @@ def test_0007_downgrade_rejects_generated_report_history(
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
                 == "20260730_0007"
             )
-            assert (
-                connection.scalar(text("SELECT count(*) FROM recovery_reports"))
-                == 1
-            )
+            assert connection.scalar(text("SELECT count(*) FROM recovery_reports")) == 1
     finally:
         engine.dispose()
 
 
 def test_model_metadata_has_persistence_tables() -> None:
     assert EXPECTED_TABLES - {"alembic_version"} <= set(Base.metadata.tables)
+
+
+def test_0008_downgrade_rejects_neutral_gate_history(
+    database_url: str,
+) -> None:
+    config = make_alembic_config(database_url)
+    command.upgrade(config, "head")
+    engine = create_database_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, hashed_password) "
+                    "VALUES (:id, :email, :password)"
+                ),
+                {
+                    "id": "neutral-gate-downgrade-user",
+                    "email": "neutral-gate-downgrade@example.com",
+                    "password": "synthetic-password-hash",
+                },
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO emotion_analysis_results ("
+                    "id, user_id, record_date, analyzed_at, model_version, "
+                    "taxonomy_version, predicted_emotion, emotion, confidence, "
+                    "is_uncertain, probabilities, margin, provisional, "
+                    "threshold_version, neutral_gate_decision, neutral_gate_score, "
+                    "neutral_gate_model_version, neutral_gate_threshold, created_at"
+                    ") VALUES ("
+                    ":id, :user_id, '2026-07-31', CURRENT_TIMESTAMP, "
+                    "'coarse-v2-e25e28', 'v2', NULL, NULL, NULL, TRUE, NULL, "
+                    "NULL, TRUE, 'mvp-v2-neutral-gate', 'neutral', 0.91, "
+                    "'neutral-gate-v1', 0.62, CURRENT_TIMESTAMP)"
+                ),
+                {
+                    "id": "neutral-gate-downgrade-row",
+                    "user_id": "neutral-gate-downgrade-user",
+                },
+            )
+    finally:
+        engine.dispose()
+
+    with pytest.raises(RuntimeError, match="neutral-gate provenance"):
+        command.downgrade(config, "20260730_0007")
+
+    engine = create_database_engine(database_url)
+    try:
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(text("SELECT version_num FROM alembic_version"))
+                == "20260731_0008"
+            )
+    finally:
+        engine.dispose()
 
 
 def test_head_has_no_model_metadata_drift(database_url: str) -> None:

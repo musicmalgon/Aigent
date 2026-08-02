@@ -32,3 +32,10 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  frontend:
+    build:
+      context: "./services/frontend/User dashboard"
+    ports:
+      - "3000:80"
+    restart: unless-stopped

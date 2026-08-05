@@ -48,6 +48,10 @@ class PasswordUpdate(BaseModel):
         return _check_password_strength(v)
 
 
+class AccountDataDeleteRequest(BaseModel):
+    current_password: str
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -55,3 +59,14 @@ class UserRead(BaseModel):
     email: EmailStr
     name: str | None = None
     user_type: UserType | None = None
+
+
+class AccountDataDeletionSummaryRead(BaseModel):
+    # 서비스 계층이 돌려주는 dataclass를 그대로 응답으로 검증하기 위한 설정.
+    model_config = ConfigDict(from_attributes=True)
+
+    recovery_reports_deleted: int
+    risk_evaluations_deleted: int
+    baselines_deleted: int
+    emotion_analyses_deleted: int
+    daily_records_deleted: int

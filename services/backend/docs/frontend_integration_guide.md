@@ -116,6 +116,46 @@ another `POST`.
 open by design, so a user who has withdrawn consent can still see and erase
 their own data. Only writes are blocked.
 
+### Erasing all recorded data
+
+```text
+DELETE /users/me/data    -> 200 (body: per-table deleted counts)
+```
+
+```json
+{ "current_password": "..." }
+```
+
+This wipes every derived health and behavioral row for the caller — daily
+records, emotion analyses, baselines, risk evaluations, recovery reports — and
+nothing else. **The account survives**: the same token keeps working, `GET
+/users/me` still returns the user, and they can start recording again
+immediately. **Consent history also survives** by design, so `GET
+/api/v1/consents` is unchanged afterwards; the audit trail of who consented
+when must outlive the data itself.
+
+Because the action is irreversible it re-verifies the password exactly like
+`PATCH /users/me/password`, so the confirmation screen needs a password field
+and must handle `401` `현재 비밀번호가 일치하지 않습니다` inline.
+
+The response reports counts per table rather than a bare `204`, so the screen
+after the confirmation can state what actually went instead of a vague
+"삭제됐어요":
+
+```json
+{
+  "recovery_reports_deleted": 2,
+  "risk_evaluations_deleted": 3,
+  "baselines_deleted": 1,
+  "emotion_analyses_deleted": 5,
+  "daily_records_deleted": 12
+}
+```
+
+e.g. `생활기록 12건, 위험도평가 3건이 삭제됐어요`. All-zero counts on an empty
+account are a normal `200`, not an error. After a successful call, treat
+`readiness` as back at `insufficient_records` and re-fetch the dashboard.
+
 ## 3. Recommended home-screen call sequence
 
 Two calls, in parallel, are enough to paint the home screen:
@@ -184,6 +224,7 @@ route handlers return.
 | `401` | any authenticated endpoint | `Could not validate credentials` | Missing, malformed, or expired token. Response carries `WWW-Authenticate: Bearer`. Send back to login. |
 | `401` | `POST /auth/login` | `이메일 또는 비밀번호가 올바르지 않습니다.` | Inline form error. Do not distinguish unknown email from wrong password. |
 | `401` | `PATCH /users/me/password` | `현재 비밀번호가 일치하지 않습니다` | Inline error on the current-password field only. |
+| `401` | `DELETE /users/me/data` | `현재 비밀번호가 일치하지 않습니다` | Same. Nothing was deleted; the password check runs before any write. |
 | `403` | `POST`/`PUT /api/v1/behavioral-records` | `health_data 동의가 필요합니다` | Route to the consent screen, then retry. |
 | `403` | `POST /api/v1/emotion-analyses` | `emotion_diary 동의가 필요합니다` | Same, for the diary consent. |
 | `404` | `POST /api/v1/emotion-analyses`, `POST /api/v1/risk-evaluations`, `GET`/`PUT`/`DELETE /api/v1/behavioral-records/{date}` | `Behavioral record not found.` | No record for that date. Prompt to record that day first. Another user's data returns the same `404`. |

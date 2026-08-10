@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, type ChangeEvent } from "react";
 import { ArrowRight, Check } from "lucide-react";
 
 export function Brand() {
@@ -43,7 +43,19 @@ export function CheckBox({ checked }: { checked: boolean }) {
   );
 }
 
-export function Field({ label, placeholder, type = "text" }: { label: string; placeholder: string; type?: string }) {
+export function Field({
+  label,
+  placeholder,
+  type = "text",
+  value,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  type?: string;
+  value?: string;
+  onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+}) {
   return (
     <label className="block text-sm text-[#514e48]">
       {label}
@@ -51,6 +63,8 @@ export function Field({ label, placeholder, type = "text" }: { label: string; pl
         required
         type={type}
         placeholder={placeholder}
+        value={value}
+        onChange={onChange}
         className="mt-2 w-full border-b border-border bg-transparent py-3 text-sm outline-none placeholder:text-[#aaa197] focus:border-[#68796b]"
       />
     </label>

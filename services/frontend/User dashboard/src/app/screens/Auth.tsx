@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { Field, NoteMark } from "../components/common";
 import type { AppScreen } from "../types";
+import { login as loginRequest, signup as signupRequest } from "../api/auth";
 
 export function Auth({
   mode,
@@ -12,6 +14,41 @@ export function Auth({
   openOverlay: () => void;
 }) {
   const signup = mode === "signup";
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null);
+
+    if (signup && password !== passwordConfirm) {
+      setError("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (signup) {
+        await signupRequest(email, password);
+        // 회원가입 성공 후 바로 로그인까지 시켜서 토큰을 받아둠
+        await loginRequest(email, password);
+        go("consent");
+      } else {
+        await loginRequest(email, password);
+        go("home");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "요청 중 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-background px-6 py-7 sm:px-10">
       <div className="mx-auto max-w-5xl">
@@ -42,26 +79,45 @@ export function Auth({
               {signup ? "나중에 바꿀 수 있는 정보예요. 부담 없이 시작해요." : "마지막으로 남긴 기록부터 천천히 이어가면 돼요."}
             </p>
           </div>
-          <form
-            onSubmit={event => {
-              event.preventDefault();
-              go(signup ? "consent" : "home");
-            }}
-            className="border-t border-border pt-5"
-          >
+          <form onSubmit={handleSubmit} className="border-t border-border pt-5">
             <div className="space-y-4">
-              {signup && <Field label="이름" placeholder="이름을 입력해 주세요" />}
-              <Field label="이메일" type="email" placeholder="name@example.com" />
-              <Field label="비밀번호" type="password" placeholder="8자 이상 입력해 주세요" />
-              {signup && <Field label="비밀번호 확인" type="password" placeholder="한 번 더 입력해 주세요" />}
+              {signup && (
+                <Field label="이름" placeholder="이름을 입력해 주세요" value={name} onChange={e => setName(e.target.value)} />
+              )}
+              <Field
+                label="이메일"
+                type="email"
+                placeholder="name@example.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+              />
+              <Field
+                label="비밀번호"
+                type="password"
+                placeholder="8자 이상 입력해 주세요"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+              />
+              {signup && (
+                <Field
+                  label="비밀번호 확인"
+                  type="password"
+                  placeholder="한 번 더 입력해 주세요"
+                  value={passwordConfirm}
+                  onChange={e => setPasswordConfirm(e.target.value)}
+                />
+              )}
             </div>
+
+            {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
+
             {!signup && (
               <button type="button" onClick={openOverlay} className="mt-4 text-sm text-[#5c7161] underline underline-offset-4">
                 비밀번호 찾기
               </button>
             )}
-            <button className="mt-7 w-full rounded-lg bg-[#68796b] py-3 text-sm font-semibold text-white">
-              {signup ? "이메일로 가입하기" : "로그인"}
+            <button disabled={loading} className="mt-7 w-full rounded-lg bg-[#68796b] py-3 text-sm font-semibold text-white disabled:opacity-60">
+              {loading ? "처리 중..." : signup ? "이메일로 가입하기" : "로그인"}
             </button>
             <div className="my-6 flex items-center gap-3 text-[11px] text-muted-foreground">
               <span className="h-px flex-1 bg-border" />또는<span className="h-px flex-1 bg-border" />

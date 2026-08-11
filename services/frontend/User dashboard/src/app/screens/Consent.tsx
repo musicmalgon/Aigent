@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CheckBox, OnboardingFrame } from "../components/common";
 import type { AppScreen } from "../types";
+import { grantConsent } from "../api/consents";
 
 const CONSENT_ITEMS: [string, string][] = [
   ["서비스 이용약관", "필수"],
@@ -10,11 +11,38 @@ const CONSENT_ITEMS: [string, string][] = [
   ["선택적 외부 서비스 연동 동의", "선택"],
 ];
 
+// 화면 체크박스 인덱스 -> 백엔드 ConsentType 매핑.
+// 백엔드에 health_data / emotion_diary 두 종류만 있어서, 나머지 항목(이용약관/개인정보/외부연동)은
+// 서버로 보내지 않고 화면에서만 체크 상태로 관리함. 실제 매핑이 맞는지 기획/백엔드 확인 필요.
+const CONSENT_TYPE_MAP: Record<number, "health_data" | "emotion_diary"> = {
+  2: "health_data",
+  3: "emotion_diary",
+};
+
 export function Consent({ go, openDetail }: { go: (screen: AppScreen) => void; openDetail: () => void }) {
   const [all, setAll] = useState(false);
   const [items, setItems] = useState([false, false, false, false, false]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const toggle = (i: number) => setItems(v => v.map((x, j) => (i === j ? !x : x)));
   const ready = items.slice(0, 4).every(Boolean);
+
+  async function handleNext() {
+    setError(null);
+    setLoading(true);
+    try {
+      const requests = Object.entries(CONSENT_TYPE_MAP)
+        .filter(([index]) => items[Number(index)])
+        .map(([, consentType]) => grantConsent(consentType));
+      await Promise.all(requests);
+      go("mode");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "동의 저장 중 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <OnboardingFrame
@@ -54,12 +82,15 @@ export function Consent({ go, openDetail }: { go: (screen: AppScreen) => void; o
           </div>
         ))}
       </div>
+
+      {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
+
       <button
-        disabled={!ready}
-        onClick={() => go("mode")}
+        disabled={!ready || loading}
+        onClick={handleNext}
         className="mt-7 w-full rounded-lg bg-[#68796b] py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-[#b7beb5]"
       >
-        다음
+        {loading ? "저장 중..." : "다음"}
       </button>
     </OnboardingFrame>
   );

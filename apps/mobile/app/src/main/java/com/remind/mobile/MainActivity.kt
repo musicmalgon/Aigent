@@ -34,22 +34,21 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.remind.mobile.network.ApiClient
 import com.remind.mobile.network.ConsentGrantRequest
 import com.remind.mobile.network.ConsentType
-import com.remind.mobile.network.LoginRequest
-import com.remind.mobile.network.SignupRequest
+import com.remind.mobile.sync.SyncResult
+import com.remind.mobile.sync.scheduleDailySync
+import com.remind.mobile.sync.signInTestAccount
+import com.remind.mobile.sync.syncYesterdayRecord
 import com.remind.mobile.ui.theme.ReMindTheme
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.temporal.ChronoUnit
-
-private const val TEST_ACCOUNT_EMAIL = "remind-poc-tester@example.com"
-private const val TEST_ACCOUNT_PASSWORD = "PoCTester!2026"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        scheduleDailySync(applicationContext)
         enableEdgeToEdge()
         setContent {
             ReMindTheme {
@@ -69,6 +68,7 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
 
     var statusText by remember { mutableStateOf("Health Connect 상태 확인 중...") }
     var permissionGranted by remember { mutableStateOf(false) }
+    var backgroundPermissionGranted by remember { mutableStateOf(false) }
     var resultText by remember { mutableStateOf("아직 조회하지 않음") }
 
     var authToken by remember { mutableStateOf<String?>(null) }
@@ -85,10 +85,20 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
         statusText = if (permissionGranted) "권한 승인됨" else "권한 일부 거부됨"
     }
 
+    // 백그라운드 읽기 권한은 별도 런처로 분리한다. 안드로이드는 이 권한을
+    // 포그라운드 권한이 이미 승인된 뒤 별개 요청으로 받도록 요구해서, 위
+    // 요청에 합쳐 보내면 거부될 수 있다.
+    val backgroundPermissionLauncher = rememberLauncherForActivityResult(
+        contract = PermissionController.createRequestPermissionResultContract()
+    ) { granted ->
+        backgroundPermissionGranted = granted.contains(HEALTH_CONNECT_BACKGROUND_PERMISSION)
+    }
+
     suspend fun refreshPermissionStatus() {
         statusText = when (HealthConnectClient.getSdkStatus(context)) {
             HealthConnectClient.SDK_AVAILABLE -> {
                 permissionGranted = manager.hasAllPermissions()
+                backgroundPermissionGranted = manager.hasBackgroundReadPermission()
                 if (permissionGranted) "Health Connect 사용 가능 · 권한 승인됨"
                 else "Health Connect 사용 가능 · 권한 필요"
             }
@@ -154,6 +164,25 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
             Text("권한 요청")
         }
 
+        // 2단계 요청: 포그라운드 권한이 승인된 뒤에만 노출한다.
+        if (permissionGranted && !backgroundPermissionGranted) {
+            Button(
+                onClick = {
+                    backgroundPermissionLauncher.launch(setOf(HEALTH_CONNECT_BACKGROUND_PERMISSION))
+                }
+            ) {
+                Text("백그라운드 동기화 권한 요청")
+            }
+        }
+
+        Text(
+            text = if (backgroundPermissionGranted) {
+                "백그라운드 동기화 권한: 승인됨 (앱을 열지 않아도 자동 전송)"
+            } else {
+                "백그라운드 동기화 권한: 없음 (앱을 열었을 때만 전송)"
+            }
+        )
+
         if (!permissionGranted) {
             // Escape hatch for the "revoked, not just never-granted" case:
             // Health Connect has no OS-level "don't ask again", so
@@ -207,17 +236,7 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
                 scope.launch {
                     loginStatusText = "로그인 시도 중..."
                     try {
-                        try {
-                            ApiClient.service.signup(
-                                SignupRequest(TEST_ACCOUNT_EMAIL, TEST_ACCOUNT_PASSWORD)
-                            )
-                        } catch (e: HttpException) {
-                            if (e.code() != 409) throw e
-                        }
-                        val tokenResponse = ApiClient.service.login(
-                            LoginRequest(TEST_ACCOUNT_EMAIL, TEST_ACCOUNT_PASSWORD)
-                        )
-                        authToken = tokenResponse.accessToken
+                        authToken = signInTestAccount()
                         loginStatusText = "로그인 성공"
                     } catch (e: Exception) {
                         authToken = null
@@ -231,49 +250,24 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
 
         Button(
             onClick = {
-                val token = authToken ?: return@Button
                 scope.launch {
-                    try {
-                        val zoneId = ZoneId.systemDefault()
-                        val targetDate = LocalDate.now(zoneId).minusDays(1)
-                        val start = targetDate.atStartOfDay(zoneId).toInstant()
-                        val end = targetDate.plusDays(1).atStartOfDay(zoneId).toInstant()
-
-                        val steps = manager.readStepsTotal(start, end)
-                        val sleepSessions = manager.readSleepSessions(start, end)
-                        // "no data for the day" is a real, valid state the
-                        // backend needs to see (it feeds the "생활데이터
-                        // 부족" combined-signal case) -- so we still submit
-                        // rather than blocking, but say so up front instead
-                        // of silently sending an all-null record.
-                        val hasAnyRealData = steps != null || sleepSessions.isNotEmpty()
+                    // 백그라운드 워커와 완전히 같은 경로를 탄다. 여기서는
+                    // 결과를 화면 문구로 옮기는 일만 한다.
+                    val result = syncYesterdayRecord(manager) { hasAnyRealData ->
                         submitResultText = if (hasAnyRealData) "전송 중..."
                             else "실제 측정값 없음 — '데이터 없음' 상태로 전송 중..."
-
-                        val record = buildDailyRecordCreate(targetDate, zoneId, steps, sleepSessions)
-                        val response = ApiClient.service.createDailyRecord(
-                            "Bearer $token",
-                            record,
-                        )
-                        submitResultText = if (hasAnyRealData) {
-                            "저장 성공 (${response.date}): " +
-                                "steps=${response.steps ?: "없음"}, " +
-                                "sleep=${response.sleepMinutes ?: "없음"}분"
-                        } else {
-                            "저장 성공 (${response.date}): 데이터 없음 상태로 기록됨 (0 아님)"
-                        }
-                    } catch (e: HttpException) {
-                        // 409 isn't really a failure from the user's
-                        // point of view -- the backend enforces one
-                        // record per user+date, so a repeat tap on an
-                        // already-submitted day is expected, not broken.
-                        submitResultText = if (e.code() == 409) {
+                    }
+                    submitResultText = when (result) {
+                        is SyncResult.Success ->
+                            "저장 성공 (${result.date}): " +
+                                "steps=${result.steps ?: "없음"}, " +
+                                "sleep=${result.sleepMinutes ?: "없음"}분"
+                        is SyncResult.SuccessNoData ->
+                            "저장 성공 (${result.date}): 데이터 없음 상태로 기록됨 (0 아님)"
+                        SyncResult.AlreadySubmitted ->
                             "이미 어제 데이터를 전송했어요 (중복 저장 방지)"
-                        } else {
-                            "전송 실패: HTTP ${e.code()}"
-                        }
-                    } catch (e: Exception) {
-                        submitResultText = "전송 실패: ${e.message}"
+                        is SyncResult.HttpFailure -> "전송 실패: HTTP ${result.code}"
+                        is SyncResult.Failure -> "전송 실패: ${result.message}"
                     }
                 }
             },

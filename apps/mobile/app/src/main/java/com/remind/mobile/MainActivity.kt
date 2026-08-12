@@ -271,6 +271,10 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
                     }
                 }
             },
+            // authToken 자체는 아래 호출에 안 쓰인다 -- syncYesterdayRecord가
+            // 매번 자체적으로 재로그인한다 (워커와 동일 경로를 타야 해서).
+            // 그래도 게이트로 남겨둔 이유: "로그인" 버튼을 먼저 눌러 연결이
+            // 되는지 확인시키는 수동 테스트 절차로서의 의미가 있어서다.
             enabled = permissionGranted && authToken != null
         ) {
             Text("어제 데이터 서버로 전송")

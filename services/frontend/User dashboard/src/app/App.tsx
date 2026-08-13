@@ -19,11 +19,18 @@ import { PlanView } from "./screens/PlanView";
 import { MyPage } from "./screens/MyPage";
 import { OverlayContent } from "./screens/OverlayContent";
 
+function todayDateString() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>("welcome");
   const [menu, setMenu] = useState(false);
   const [overlay, setOverlay] = useState<OverlayKind>(null);
   const [onboardMode, setOnboardMode] = useState<OnboardMode>("brief");
+  // "지난 기록"에서 어떤 날짜를 눌러 record 오버레이를 열었는지 기억해둠.
+  // 지정 없이 열리면(HomeView 등) 오늘 날짜로 취급.
+  const [selectedRecordDate, setSelectedRecordDate] = useState<string>(todayDateString());
 
   const shell = ["home", "record", "past", "report", "plan", "profile"].includes(screen);
   const current = nav.find(item => item.id === screen);
@@ -31,6 +38,11 @@ export default function App() {
   const go = (next: AppScreen) => {
     setScreen(next);
     setMenu(false);
+  };
+
+  const openRecordOverlay = (date?: string) => {
+    setSelectedRecordDate(date ?? todayDateString());
+    setOverlay("record");
   };
 
   const view: Record<AppScreen, ReactNode> = {
@@ -42,9 +54,9 @@ export default function App() {
     burnout: <BurnoutFlow go={go} mode={onboardMode} />,
     survey: <Survey go={go} mode={onboardMode} />,
     result: <SurveyResult go={go} />,
-    home: <HomeView go={go} openRecord={() => setOverlay("record")} />,
+    home: <HomeView go={go} openRecord={() => openRecordOverlay()} />,
     record: <RecordView go={go} />,
-    past: <PastView go={go} openRecord={() => setOverlay("record")} />,
+    past: <PastView go={go} openRecord={date => openRecordOverlay(date)} />,
     report: <ReportView go={go} />,
     plan: <PlanView />,
     profile: <MyPage open={setOverlay} />,
@@ -55,7 +67,7 @@ export default function App() {
       <>
         {view[screen]}
         <Overlay open={overlay !== null} onClose={() => setOverlay(null)} title={overlay === "forgot" ? "비밀번호 찾기" : overlay === "consent-detail" ? "동의 내용" : ""}>
-          <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} />
+          <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} />
         </Overlay>
       </>
     );
@@ -84,9 +96,9 @@ export default function App() {
         </nav>
         <div className="mt-auto border-t border-border pt-5">
           <p className="font-serif text-sm leading-6 text-[#5a5750]">
-            “기록은 나를 판단하는 기준이 아니라,
+            "기록은 나를 판단하는 기준이 아니라,
             <br />
-            나를 이해하는 단서가 될 수 있어요.”
+            나를 이해하는 단서가 될 수 있어요."
           </p>
         </div>
       </aside>
@@ -123,7 +135,7 @@ export default function App() {
           ))}
       </nav>
       <Overlay open={overlay !== null} onClose={() => setOverlay(null)} title={overlay ? overlayTitle[overlay] : ""}>
-        <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} />
+        <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} />
       </Overlay>
     </div>
   );

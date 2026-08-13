@@ -1,11 +1,168 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { Field, Integration, SummaryLine } from "../components/common";
 import type { AppScreen, OverlayKind } from "../types";
+import { getCurrentUser, updateUserName, updateUserPassword, deleteAccountData, type UserRead } from "../api/users";
+import { logout } from "../api/auth";
+import { getBehavioralRecordByDate, type BehavioralRecordRead } from "../api/behavioralRecords";
+import { getEmotionAnalyses, type EmotionAnalysisRead } from "../api/emotionAnalyses";
 
-export function OverlayContent({ kind, close, go }: { kind: OverlayKind; close: () => void; go: (screen: AppScreen) => void }) {
+function formatMinutes(min: number | null): string {
+  if (min === null) return "기록 없음";
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return `${m}분`;
+  if (m === 0) return `${h}시간`;
+  return `${h}시간 ${m}분`;
+}
+
+export function OverlayContent({
+  kind,
+  close,
+  go,
+  selectedDate,
+}: {
+  kind: OverlayKind;
+  close: () => void;
+  go: (screen: AppScreen) => void;
+  selectedDate?: string;
+}) {
   const [sent, setSent] = useState(false);
   const [connected, setConnected] = useState(false);
+
+  // --- record(지난 기록 상세) 전용 상태 ---
+  const [recordData, setRecordData] = useState<BehavioralRecordRead | null>(null);
+  const [recordEmotion, setRecordEmotion] = useState<EmotionAnalysisRead | null>(null);
+  const [recordLoading, setRecordLoading] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
+
+  // --- account 전용 상태 ---
+  const [accountUser, setAccountUser] = useState<UserRead | null>(null);
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [editing, setEditing] = useState<"name" | "password" | "delete" | null>(null);
+
+  const [nameInput, setNameInput] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [nameSaving, setNameSaving] = useState(false);
+
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
+
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    if (kind !== "record" || !selectedDate) return;
+    let cancelled = false;
+    setRecordLoading(true);
+    setRecordError(null);
+    (async () => {
+      try {
+        const record = await getBehavioralRecordByDate(selectedDate);
+        if (cancelled) return;
+        setRecordData(record);
+        try {
+          const analyses = await getEmotionAnalyses();
+          if (!cancelled) {
+            setRecordEmotion(analyses.find(a => a.record_date === selectedDate) ?? null);
+          }
+        } catch {
+          // 감정분석 조회 실패는 치명적이지 않으니 생활기록만이라도 보여줌
+        }
+      } catch (err) {
+        if (!cancelled) setRecordError(err instanceof Error ? err.message : "기록을 불러오지 못했습니다.");
+      } finally {
+        if (!cancelled) setRecordLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, selectedDate]);
+
+  useEffect(() => {
+    if (kind !== "account") return;
+    let cancelled = false;
+    setAccountLoading(true);
+    (async () => {
+      try {
+        const user = await getCurrentUser();
+        if (!cancelled) {
+          setAccountUser(user);
+          setNameInput(user.name);
+        }
+      } catch {
+        // 무시 — 아래에서 "현재 이름" 자리에 빈 값으로 표시됨
+      } finally {
+        if (!cancelled) setAccountLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [kind]);
+
+  async function handleSaveName() {
+    setNameError(null);
+    if (nameInput.trim().length === 0) {
+      setNameError("이름을 입력해 주세요.");
+      return;
+    }
+    setNameSaving(true);
+    try {
+      const updated = await updateUserName(nameInput.trim());
+      setAccountUser(updated);
+      setEditing(null);
+    } catch (err) {
+      setNameError(err instanceof Error ? err.message : "이름 변경 중 오류가 발생했습니다.");
+    } finally {
+      setNameSaving(false);
+    }
+  }
+
+  async function handleSavePassword() {
+    setPasswordError(null);
+    setPasswordSaved(false);
+    if (currentPassword.length === 0 || newPassword.length === 0) {
+      setPasswordError("현재 비밀번호와 새 비밀번호를 모두 입력해 주세요.");
+      return;
+    }
+    setPasswordSaving(true);
+    try {
+      await updateUserPassword(currentPassword, newPassword);
+      setPasswordSaved(true);
+      setCurrentPassword("");
+      setNewPassword("");
+      setEditing(null);
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : "비밀번호 변경 중 오류가 발생했습니다.");
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setDeleteError(null);
+    if (deletePassword.length === 0) {
+      setDeleteError("비밀번호를 입력해 주세요.");
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteAccountData(deletePassword);
+      logout();
+      close();
+      go("welcome");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "계정 삭제 중 오류가 발생했습니다.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   if (kind === "forgot")
     return (
@@ -24,25 +181,21 @@ export function OverlayContent({ kind, close, go }: { kind: OverlayKind; close: 
       </>
     );
 
-  if (kind === "record")
+  if (kind === "record") {
+    if (recordLoading) return <p className="text-sm text-muted-foreground">불러오는 중...</p>;
+    if (recordError) return <p className="text-sm text-red-500">{recordError}</p>;
+    if (!recordData) return <p className="text-sm text-muted-foreground">이 날짜의 기록을 찾을 수 없어요.</p>;
+
     return (
       <>
-        <p className="text-xs text-muted-foreground">7월 17일 목요일</p>
-        <h3 className="mt-3 font-serif text-xl leading-8">
-          잠드는 시간이 늦었지만,
-          <br />
-          오후에는 오래 쉬어갈 수 있었어요.
-        </h3>
+        <p className="text-xs text-muted-foreground">{selectedDate}</p>
         <div className="mt-6 divide-y divide-border border-y border-border">
-          <SummaryLine label="수면" value="5시간 40분 · 직접 입력" />
-          <SummaryLine label="휴식" value="1시간 10분 · 직접 수정됨" />
-          <SummaryLine label="공부 · 업무" value="7시간 30분" />
-          <SummaryLine label="운동" value="산책 20분" />
-          <SummaryLine label="일정 부담" value="조금 빽빽했어요" />
-          <SummaryLine label="오늘의 마음" value="무기력" />
+          <SummaryLine label="수면" value={formatMinutes(recordData.sleep_minutes)} />
+          <SummaryLine label="휴식" value={formatMinutes(recordData.rest_minutes)} />
+          <SummaryLine label="공부 · 업무" value={formatMinutes(recordData.work_or_study_minutes)} />
+          <SummaryLine label="운동" value={formatMinutes(recordData.exercise_minutes)} />
+          <SummaryLine label="오늘의 마음" value={recordEmotion?.emotion ?? "분석된 기록 없음"} />
         </div>
-        <p className="mt-6 text-sm leading-6 text-muted-foreground">“오후에는 계획을 조금 미루고, 집 근처를 걸었다.”</p>
-        <p className="mt-4 text-xs text-muted-foreground">데이터 출처 · 직접 입력</p>
         <button
           onClick={() => {
             close();
@@ -50,10 +203,11 @@ export function OverlayContent({ kind, close, go }: { kind: OverlayKind; close: 
           }}
           className="mt-7 text-sm text-[#536458] underline underline-offset-4"
         >
-          이 기록 수정하기
+          오늘 기록 남기러 가기
         </button>
       </>
     );
+  }
 
   if (kind === "integration")
     return (
@@ -88,24 +242,65 @@ export function OverlayContent({ kind, close, go }: { kind: OverlayKind; close: 
       </div>
     );
 
-  if (kind === "account")
+  if (kind === "account") {
+    if (accountLoading) {
+      return <p className="text-sm text-muted-foreground">불러오는 중...</p>;
+    }
     return (
       <>
         <div className="divide-y divide-border border-y border-border">
-          <button className="flex w-full items-center justify-between py-5 text-left">
-            <span>
-              <strong className="block text-sm font-medium">이름 변경</strong>
-              <span className="mt-1 block text-xs text-muted-foreground">현재 이름 · 지민</span>
-            </span>
-            <ChevronRight size={16} />
-          </button>
-          <button className="flex w-full items-center justify-between py-5 text-left">
-            <span>
-              <strong className="block text-sm font-medium">비밀번호 변경</strong>
-              <span className="mt-1 block text-xs text-muted-foreground">안전하게 계정을 관리해요.</span>
-            </span>
-            <ChevronRight size={16} />
-          </button>
+          {/* 이름 변경 */}
+          <div className="py-5">
+            <button onClick={() => setEditing(editing === "name" ? null : "name")} className="flex w-full items-center justify-between text-left">
+              <span>
+                <strong className="block text-sm font-medium">이름 변경</strong>
+                <span className="mt-1 block text-xs text-muted-foreground">현재 이름 · {accountUser?.name || "-"}</span>
+              </span>
+              <ChevronRight size={16} className={editing === "name" ? "rotate-90 transition-transform" : "transition-transform"} />
+            </button>
+            {editing === "name" && (
+              <div className="mt-4">
+                <Field label="새 이름" placeholder="이름을 입력해 주세요" value={nameInput} onChange={e => setNameInput(e.target.value)} />
+                {nameError && <p className="mt-2 text-xs text-red-500">{nameError}</p>}
+                <button
+                  onClick={handleSaveName}
+                  disabled={nameSaving}
+                  className="mt-4 rounded-lg bg-[#68796b] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                >
+                  {nameSaving ? "저장 중..." : "저장하기"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 비밀번호 변경 */}
+          <div className="py-5">
+            <button onClick={() => setEditing(editing === "password" ? null : "password")} className="flex w-full items-center justify-between text-left">
+              <span>
+                <strong className="block text-sm font-medium">비밀번호 변경</strong>
+                <span className="mt-1 block text-xs text-muted-foreground">
+                  {passwordSaved ? "방금 변경됐어요" : "안전하게 계정을 관리해요."}
+                </span>
+              </span>
+              <ChevronRight size={16} className={editing === "password" ? "rotate-90 transition-transform" : "transition-transform"} />
+            </button>
+            {editing === "password" && (
+              <div className="mt-4 space-y-3">
+                <Field label="현재 비밀번호" type="password" placeholder="현재 비밀번호" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} />
+                <Field label="새 비밀번호" type="password" placeholder="8자 이상" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                {passwordError && <p className="mt-2 text-xs text-red-500">{passwordError}</p>}
+                <button
+                  onClick={handleSavePassword}
+                  disabled={passwordSaving}
+                  className="mt-2 rounded-lg bg-[#68796b] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                >
+                  {passwordSaving ? "저장 중..." : "변경하기"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 계정 연결 — 실제 연동 기능은 준비 중이라 UI만 유지 */}
           <button className="flex w-full items-center justify-between py-5 text-left">
             <span>
               <strong className="block text-sm font-medium">계정 연결</strong>
@@ -114,13 +309,31 @@ export function OverlayContent({ kind, close, go }: { kind: OverlayKind; close: 
             <ChevronRight size={16} />
           </button>
         </div>
+
         <div className="mt-10 border-t border-border pt-5">
           <p className="text-sm text-[#8d5541]">계정 삭제</p>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">계정을 삭제하면 지금까지의 기록과 연결 정보도 함께 사라져요.</p>
-          <button className="mt-4 text-xs text-[#8d5541] underline underline-offset-4">삭제 방법 확인하기</button>
+          {editing !== "delete" ? (
+            <button onClick={() => setEditing("delete")} className="mt-4 text-xs text-[#8d5541] underline underline-offset-4">
+              삭제 방법 확인하기
+            </button>
+          ) : (
+            <div className="mt-4">
+              <Field label="비밀번호 확인" type="password" placeholder="현재 비밀번호" value={deletePassword} onChange={e => setDeletePassword(e.target.value)} />
+              {deleteError && <p className="mt-2 text-xs text-red-500">{deleteError}</p>}
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleting}
+                className="mt-4 rounded-lg bg-[#8d5541] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              >
+                {deleting ? "삭제 중..." : "정말 삭제하기"}
+              </button>
+            </div>
+          )}
         </div>
       </>
     );
+  }
 
   return <p className="text-sm text-muted-foreground">이 항목의 내용을 확인할 수 있어요. 동의 범위는 언제든 마이페이지에서 다시 살펴볼 수 있어요.</p>;
 }

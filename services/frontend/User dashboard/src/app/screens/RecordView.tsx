@@ -8,7 +8,7 @@ import {
   getBehavioralRecordByDate,
   type NullableMetricKey,
 } from "../api/behavioralRecords";
-import { createEmotionAnalysis, type EmotionAnalysisRead } from "../api/emotionanalyses";
+import { createEmotionAnalysis, type EmotionAnalysisRead } from "../api/emotionAnalyses";
 
 function todayDateString() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD

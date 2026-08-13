@@ -3,6 +3,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqladmin import Admin
 from sqlalchemy.engine import Engine
@@ -52,6 +53,18 @@ def create_app(
     application = FastAPI(
         title="Re:Mind API",
         lifespan=_create_lifespan(runtime_settings, ai_service_client),
+    )
+
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://34.64.211.201:3000",
+            "http://localhost:5173",
+            "http://localhost:3000",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     @application.exception_handler(RequestValidationError)

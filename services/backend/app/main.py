@@ -7,11 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqladmin import Admin
 from sqlalchemy.engine import Engine
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.admin import UserAdmin
 from app.api import (
     assessments,
     auth,
+    auth_google,
     baselines,
     behavioral_records,
     consents,
@@ -67,6 +69,13 @@ def create_app(
         allow_headers=["*"],
     )
 
+    # 구글 OAuth 로그인 중 CSRF 방지용 state 값을 잠깐 담아둘 세션 쿠키
+    application.add_middleware(
+        SessionMiddleware,
+        secret_key=runtime_settings.jwt_secret_key.get_secret_value(),
+        same_site="lax",
+    )
+
     @application.exception_handler(RequestValidationError)
     async def safe_request_validation_error(
         request: Request,
@@ -98,6 +107,7 @@ def create_app(
         admin.add_view(UserAdmin)
 
     application.include_router(auth.router)
+    application.include_router(auth_google.router)
     application.include_router(users.router, tags=["users"])
     application.include_router(behavioral_records.router)
     application.include_router(emotion_analyses.router)

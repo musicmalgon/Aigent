@@ -2,19 +2,25 @@ package com.remind.mobile
 
 import android.content.ActivityNotFoundException
 import android.os.Bundle
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.Lifecycle
@@ -45,6 +52,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
+// 배포된 웹 프론트엔드 주소. network_security_config.xml의 cleartext 허용 IP와
+// 반드시 같이 맞춰야 한다 (#102).
+private const val WEB_APP_URL = "http://34.64.211.201:3000"
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,18 +64,100 @@ class MainActivity : ComponentActivity() {
         setContent {
             ReMindTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    HealthConnectPocScreen(modifier = Modifier.padding(innerPadding))
+                    // 웹 프론트엔드가 대시보드/기록/리포트 등 실사용자 화면을 이미
+                    // 다 갖고 있으므로 웹앱을 기본 화면으로 띄운다. PoC 화면은
+                    // Health Connect 권한/동기화를 손으로 검증할 때만 쓰는
+                    // 보조 화면이라 웹 화면에서 링크로만 들어간다 (#102).
+                    var showPocScreen by remember { mutableStateOf(false) }
+                    if (showPocScreen) {
+                        HealthConnectPocScreen(
+                            modifier = Modifier.padding(innerPadding),
+                            onBackToWebApp = { showPocScreen = false },
+                        )
+                    } else {
+                        WebAppScreen(
+                            modifier = Modifier.padding(innerPadding),
+                            onOpenPocScreen = { showPocScreen = true },
+                        )
+                    }
                 }
             }
         }
     }
 }
 
+// 배포된 웹 프론트엔드를 그대로 띄우는 화면(앱의 기본 화면). 네이티브 토큰을
+// 주입하지 않고 웹 자체 로그인(Auth.tsx)에 맡긴다 -- SSO 연동은 후속 과제로
+// 남김 (#102).
+//
+// AndroidView는 Compose 트리 안에 기존 View 시스템 컴포넌트(WebView 등)를
+// 끼워 넣을 때 쓰는 브릿지다. factory는 View를 한 번만 생성하고, update는
+// 리컴포지션마다(그리고 생성 직후) 호출돼 최신 상태를 반영한다.
 @Composable
-fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
+fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit) {
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var canGoBack by remember { mutableStateOf(false) }
+
+    // 여기가 앱의 홈 화면이라, 웹뷰 안에 뒤로 갈 탐색 기록이 있을 때만
+    // 시스템 뒤로가기를 가로챈다. 기록이 없으면 가로채지 않고 시스템 기본
+    // 동작(앱 종료/백그라운드 전환)에 맡긴다 -- canGoBack()은 자동으로
+    // 리컴포지션을 트리거하는 값이 아니라서, WebViewClient 콜백에서 페이지
+    // 이동이 생길 때마다 상태로 동기화해둬야 BackHandler의 enabled가
+    // 정확해진다.
+    BackHandler(enabled = canGoBack) {
+        webView?.goBack()
+    }
+
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            // Health Connect 권한/동기화 수동 검증용 개발자 진입점.
+            // 일반 사용자 플로우엔 없어도 되지만, 검증 화면 자체를
+            // 없애지는 않기로 했다 (#102 범위).
+            TextButton(onClick = onOpenPocScreen) {
+                Text("PoC 테스트 화면")
+            }
+        }
+
+        AndroidView(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            factory = { context ->
+                WebView(context).apply {
+                    // React 앱이 localStorage에 로그인 토큰을 저장하는 방식이라
+                    // DOM storage가 없으면 로그인 상태가 유지되지 않는다.
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    webViewClient = object : WebViewClient() {
+                        // WebViewClient를 지정하지 않으면 링크 클릭 시 외부
+                        // 브라우저로 빠져나간다 -- 이 오버라이드가 그걸 막는
+                        // 동시에 뒤로가기 가능 여부도 갱신해준다.
+                        override fun doUpdateVisitedHistory(
+                            view: WebView,
+                            url: String?,
+                            isReload: Boolean,
+                        ) {
+                            canGoBack = view.canGoBack()
+                        }
+                    }
+                    loadUrl(WEB_APP_URL)
+                }
+            },
+            update = { webView = it },
+        )
+    }
+}
+
+@Composable
+fun HealthConnectPocScreen(modifier: Modifier = Modifier, onBackToWebApp: () -> Unit = {}) {
     val context = LocalContext.current
     val manager = remember { HealthConnectManager(context) }
     val scope = rememberCoroutineScope()
+
+    // 웹앱이 기본 화면이므로, 여기서 뒤로가기를 누르면 항상 웹 화면으로
+    // 돌아간다 (여기 자체를 벗어나 앱을 종료하는 경로는 없음).
+    BackHandler { onBackToWebApp() }
 
     var statusText by remember { mutableStateOf("Health Connect 상태 확인 중...") }
     var permissionGranted by remember { mutableStateOf(false) }
@@ -155,6 +248,13 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier) {
         modifier = modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // PoC 화면은 검증용 보조 화면이라, 웹 화면으로 돌아가는 진입점만
+        // 얹는다 (#102). 나머지 화면(대시보드/기록/리포트 등)은 이미 웹에 있음.
+        Button(onClick = onBackToWebApp) {
+            Text("웹 앱으로 돌아가기")
+        }
+        HorizontalDivider()
+
         Text(text = statusText)
 
         Button(

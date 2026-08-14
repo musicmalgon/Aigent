@@ -6,6 +6,8 @@ import {
   buildFieldMeta,
   createBehavioralRecord,
   getBehavioralRecordByDate,
+  updateBehavioralRecord,
+  type BehavioralRecordRead,
   type NullableMetricKey,
 } from "../api/behavioralRecords";
 import { createEmotionAnalysis, type EmotionAnalysisRead } from "../api/emotionAnalyses";
@@ -52,6 +54,8 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
   const [hs02, setHs02] = useState("");
   const [hs03, setHs03] = useState("");
 
+  // 이 화면에 UI가 없는 6개 필드와 필드별 메타데이터를 수정 시 그대로 되돌려보내기 위해 원본을 통째로 보관
+  const [existingRecord, setExistingRecord] = useState<BehavioralRecordRead | null>(null);
   const [alreadyRecordedToday, setAlreadyRecordedToday] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -63,6 +67,7 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
       try {
         const record = await getBehavioralRecordByDate(todayDateString());
         if (cancelled) return;
+        setExistingRecord(record);
         setMinuteValues({
           sleep_minutes: record.sleep_minutes,
           rest_minutes: record.rest_minutes,
@@ -88,14 +93,42 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
   }
 
   async function handleNext() {
-    if (alreadyRecordedToday) {
-      setStep(2);
-      return;
-    }
-
     setError(null);
     setSaving(true);
     try {
+      if (alreadyRecordedToday && existingRecord) {
+        // 이 화면이 다루는 4개 필드만 덮어쓰고, 나머지 6개 값과 그 메타데이터는 서버에 있던 값을 그대로 돌려보낸다.
+        // (예: 모바일 백그라운드 동기화로 들어온 steps/active_minutes를 웹 수정으로 날려버리지 않기 위함)
+        const minuteMeta = buildFieldMeta(minuteValues, editedByUser);
+        const source_by_field = { ...existingRecord.source_by_field };
+        const coverage_by_field = { ...existingRecord.coverage_by_field };
+        for (const [field] of MINUTE_FIELD_LABELS) {
+          if (!editedByUser[field]) continue; // 안 고친 필드는 기존 source(manual 등)를 health_platform으로 되돌리면 안 됨
+          source_by_field[field] = minuteMeta.source_by_field[field];
+          coverage_by_field[field] = minuteMeta.coverage_by_field[field];
+        }
+
+        const updated = await updateBehavioralRecord(todayDateString(), {
+          date: todayDateString(),
+          time_zone: TIME_ZONE,
+          sleep_minutes: minuteValues.sleep_minutes,
+          bedtime: existingRecord.bedtime,
+          wake_time: existingRecord.wake_time,
+          steps: existingRecord.steps,
+          active_minutes: existingRecord.active_minutes,
+          exercise_minutes: minuteValues.exercise_minutes,
+          work_or_study_minutes: minuteValues.work_or_study_minutes,
+          rest_minutes: minuteValues.rest_minutes,
+          schedule_count: existingRecord.schedule_count,
+          subjective_fatigue: existingRecord.subjective_fatigue,
+          source_by_field,
+          coverage_by_field,
+        });
+        setExistingRecord(updated);
+        setStep(2);
+        return;
+      }
+
       const allValues: Record<NullableMetricKey, unknown> = {
         sleep_minutes: minuteValues.sleep_minutes,
         bedtime: null,
@@ -205,7 +238,7 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
       <h1 className="mt-4 font-serif text-[31px] tracking-[-.05em]">{editing ? "기록을 다시 살펴볼까요?" : "오늘 하루를 남겨볼까요?"}</h1>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">정확하지 않아도 괜찮아요. 기억나는 만큼만 적어 주세요.</p>
       {alreadyRecordedToday && step === 1 && (
-        <p className="mt-3 text-xs text-[#8d5541]">오늘 기록은 이미 저장돼 있어요. 지금은 수정 기능이 준비 중이라 값만 확인할 수 있어요.</p>
+        <p className="mt-3 text-xs text-[#8d5541]">오늘 기록은 이미 저장돼 있어요. 값을 고치면 새로 저장할게요.</p>
       )}
       <div className="mt-9 flex items-center gap-3 text-xs">
         <span className="text-[#68796b]">01 생활</span>
@@ -232,7 +265,6 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
                       type="number"
                       min={0}
                       max={1440}
-                      disabled={alreadyRecordedToday}
                       value={minuteValues[field] ?? ""}
                       onChange={e => handleMinuteChange(field, e.target.value)}
                       placeholder="분"
@@ -251,7 +283,7 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
               disabled={saving}
               className="mt-8 inline-flex items-center gap-2 rounded-lg bg-[#68796b] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
             >
-              {saving ? "저장 중..." : "다음"} <ArrowRight size={15} />
+              {saving ? "저장 중..." : alreadyRecordedToday ? "수정하고 다음" : "다음"} <ArrowRight size={15} />
             </button>
           </>
         ) : (

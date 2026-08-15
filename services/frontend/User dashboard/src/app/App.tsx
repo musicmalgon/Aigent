@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Bell, Menu } from "lucide-react";
 import { Brand } from "./components/common";
 import { Overlay } from "./components/Overlay";
 import { nav, type AppScreen, type OnboardMode, type OverlayKind } from "./types";
+import { getCurrentUser } from "./api/users";
 
 import { Welcome } from "../app/screens/Welcome";
 import { Auth } from "../app/screens/Auth";
@@ -31,6 +32,24 @@ export default function App() {
   // "지난 기록"에서 어떤 날짜를 눌러 record 오버레이를 열었는지 기억해둠.
   // 지정 없이 열리면(HomeView 등) 오늘 날짜로 취급.
   const [selectedRecordDate, setSelectedRecordDate] = useState<string>(todayDateString());
+  // "이용약관", "개인정보 수집" 등 어떤 동의 항목의 "자세히"를 눌렀는지 기억해둠
+  const [selectedConsentItem, setSelectedConsentItem] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const user = await getCurrentUser();
+        if (!cancelled) setUserName(user.name);
+      } catch {
+        // 로그인 전 화면(welcome/signup/login)에서는 401이 정상이라 조용히 무시
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [screen]);
 
   const shell = ["home", "record", "past", "report", "plan", "profile"].includes(screen);
   const current = nav.find(item => item.id === screen);
@@ -49,7 +68,7 @@ export default function App() {
     welcome: <Welcome go={go} />,
     signup: <Auth mode="signup" go={go} openOverlay={() => setOverlay("forgot")} />,
     login: <Auth mode="login" go={go} openOverlay={() => setOverlay("forgot")} />,
-    consent: <Consent go={go} openDetail={() => setOverlay("consent-detail")} />,
+    consent: <Consent go={go} openDetail={(item: string) => { setSelectedConsentItem(item); setOverlay("consent-detail"); }} />,
     mode: <Mode go={go} setMode={setOnboardMode} />,
     burnout: <BurnoutFlow go={go} mode={onboardMode} />,
     survey: <Survey go={go} mode={onboardMode} />,
@@ -67,7 +86,7 @@ export default function App() {
       <>
         {view[screen]}
         <Overlay open={overlay !== null} onClose={() => setOverlay(null)} title={overlay === "forgot" ? "비밀번호 찾기" : overlay === "consent-detail" ? "동의 내용" : ""}>
-          <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} />
+          <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} selectedConsentItem={selectedConsentItem} onUserNameChange={setUserName} />
         </Overlay>
       </>
     );
@@ -117,8 +136,10 @@ export default function App() {
             </button>
             <span className="h-5 w-px bg-border" />
             <button onClick={() => go("profile")} className="flex items-center gap-2 text-sm">
-              <span className="grid size-7 place-items-center rounded-full bg-[#e1d1c3] text-[11px] text-[#705646]">김</span>
-              <span className="hidden sm:block">지민</span>
+              <span className="grid size-7 place-items-center rounded-full bg-[#e1d1c3] text-[11px] text-[#705646]">
+                {userName ? userName.charAt(0) : "?"}
+              </span>
+              <span className="hidden sm:block">{userName ?? "불러오는 중..."}</span>
             </button>
           </div>
         </header>
@@ -135,7 +156,7 @@ export default function App() {
           ))}
       </nav>
       <Overlay open={overlay !== null} onClose={() => setOverlay(null)} title={overlay ? overlayTitle[overlay] : ""}>
-        <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} />
+        <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} selectedConsentItem={selectedConsentItem} onUserNameChange={setUserName} />
       </Overlay>
     </div>
   );

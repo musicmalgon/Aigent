@@ -19,7 +19,7 @@ const CONSENT_TYPE_MAP: Record<number, "health_data" | "emotion_diary"> = {
   3: "emotion_diary",
 };
 
-export function Consent({ go, openDetail }: { go: (screen: AppScreen) => void; openDetail: () => void }) {
+export function Consent({ go, openDetail }: { go: (screen: AppScreen) => void; openDetail: (item: string) => void }) {
   const [all, setAll] = useState(false);
   const [items, setItems] = useState([false, false, false, false, false]);
   const [loading, setLoading] = useState(false);
@@ -72,11 +72,11 @@ export function Consent({ go, openDetail }: { go: (screen: AppScreen) => void; o
             <button onClick={() => toggle(i)}>
               <CheckBox checked={items[i]} />
             </button>
-            <button onClick={openDetail} className="flex-1 text-left text-sm">
+            <button onClick={() => openDetail(name)} className="flex-1 text-left text-sm">
               {name}
               <span className="ml-2 text-[11px] text-muted-foreground">{kind}</span>
             </button>
-            <button onClick={openDetail} className="text-xs text-[#5a7160] underline underline-offset-4">
+            <button onClick={() => openDetail(name)} className="text-xs text-[#5a7160] underline underline-offset-4">
               자세히
             </button>
           </div>

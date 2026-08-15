@@ -50,7 +50,7 @@ export interface BehavioralRecordRead extends BehavioralRecordCreate {
  *  - 기기 데이터 그대로: source "health_platform" / coverage "complete"
  *  - 사람이 직접 입력했거나 기기 값을 고침: source "manual" / coverage "complete" */
 export function buildFieldMeta(
-  values: Record<NullableMetricKey, unknown>,
+  values: Partial<Record<NullableMetricKey, unknown>>,
   editedByUser: Partial<Record<NullableMetricKey, boolean>> = {}
 ): { source_by_field: Record<NullableMetricKey, DataSource>; coverage_by_field: Record<NullableMetricKey, DataCoverage> } {
   const source_by_field = {} as Record<NullableMetricKey, DataSource>;
@@ -74,6 +74,17 @@ export async function createBehavioralRecord(
 ): Promise<BehavioralRecordRead> {
   return apiFetch<BehavioralRecordRead>("/api/v1/behavioral-records", {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+// POST와 동일한 본문 형식. payload.date는 recordDate와 같아야 하고, 해당 날짜 기록이 없으면 404.
+export async function updateBehavioralRecord(
+  recordDate: string,
+  payload: BehavioralRecordCreate
+): Promise<BehavioralRecordRead> {
+  return apiFetch<BehavioralRecordRead>(`/api/v1/behavioral-records/${recordDate}`, {
+    method: "PUT",
     body: JSON.stringify(payload),
   });
 }

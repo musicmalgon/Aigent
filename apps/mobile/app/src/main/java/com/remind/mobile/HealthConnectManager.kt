@@ -18,6 +18,15 @@ val HEALTH_CONNECT_PERMISSIONS = setOf(
     HealthPermission.getReadPermission(HeartRateRecord::class),
 )
 
+/**
+ * 포그라운드 읽기 권한과 의도적으로 분리해 둔 백그라운드 읽기 권한
+ * (`android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND`). 안드로이드는
+ * 이 권한을 대응하는 포그라운드 권한이 이미 승인된 뒤 별도 요청으로 받도록
+ * 요구하므로, HEALTH_CONNECT_PERMISSIONS에 합치면 안 된다.
+ */
+const val HEALTH_CONNECT_BACKGROUND_PERMISSION: String =
+    HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
+
 class HealthConnectManager(private val context: Context) {
 
     private val client: HealthConnectClient? by lazy {
@@ -32,6 +41,17 @@ class HealthConnectManager(private val context: Context) {
         val hcClient = client ?: return false
         val granted = hcClient.permissionController.getGrantedPermissions()
         return granted.containsAll(HEALTH_CONNECT_PERMISSIONS)
+    }
+
+    /**
+     * hasAllPermissions()만으로는 부족하다 -- 포그라운드 권한이 전부 승인돼도
+     * 이 권한이 없으면 앱이 백그라운드일 때의 읽기는 조용히 거부된다. 주기
+     * 동기화 워커는 두 검사를 모두 통과해야 실제로 데이터를 얻을 수 있다.
+     */
+    suspend fun hasBackgroundReadPermission(): Boolean {
+        val hcClient = client ?: return false
+        val granted = hcClient.permissionController.getGrantedPermissions()
+        return granted.contains(HEALTH_CONNECT_BACKGROUND_PERMISSION)
     }
 
     /**

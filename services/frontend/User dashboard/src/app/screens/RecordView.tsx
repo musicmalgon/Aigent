@@ -81,9 +81,30 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
     };
   }, []);
 
-  function handleMinuteChange(field: MinuteField, raw: string) {
-    const parsed = raw.trim() === "" ? null : Number(raw);
-    setMinuteValues(v => ({ ...v, [field]: Number.isNaN(parsed) ? v[field] : parsed }));
+  function splitHourMinute(total: number | null): { h: string; m: string } {
+    if (total === null) return { h: "", m: "" };
+    return { h: String(Math.floor(total / 60)), m: String(total % 60) };
+  }
+
+  function handleHourChange(field: MinuteField, rawHour: string) {
+    const h = rawHour.trim() === "" ? 0 : Number(rawHour);
+    if (Number.isNaN(h)) return;
+    const curM = (minuteValues[field] ?? 0) % 60;
+    setMinuteValues(v => ({ ...v, [field]: Math.min(24, Math.max(0, h)) * 60 + curM }));
+    setEditedByUser(v => ({ ...v, [field]: true }));
+  }
+
+  function handleMinuteOnlyChange(field: MinuteField, rawMin: string) {
+    let m = rawMin.trim() === "" ? 0 : Number(rawMin);
+    if (Number.isNaN(m)) return;
+    m = Math.min(59, Math.max(0, m));
+    const curH = Math.floor((minuteValues[field] ?? 0) / 60);
+    setMinuteValues(v => ({ ...v, [field]: curH * 60 + m }));
+    setEditedByUser(v => ({ ...v, [field]: true }));
+  }
+
+  function handleClearField(field: MinuteField) {
+    setMinuteValues(v => ({ ...v, [field]: null }));
     setEditedByUser(v => ({ ...v, [field]: true }));
   }
 
@@ -218,30 +239,56 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
           <>
             <p className="text-xs leading-5 text-muted-foreground">기기에서 가져온 값이 있으면 우선 채워드려요. 다르면 직접 고쳐 주세요.</p>
             <div className="mt-5 grid gap-x-10 border-b border-border sm:grid-cols-2">
-              {MINUTE_FIELD_LABELS.map(([field, label], i) => (
-                <div key={field} className={`flex items-center justify-between border-t border-border py-4 ${i === 0 ? "sm:border-t-0" : ""}`}>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{label}</p>
-                    <p className="mt-1 text-[11px] text-[#5a7160]">
-                      {editedByUser[field] ? "직접 수정됨" : minuteValues[field] !== null ? "기기 연동" : "기록 없음"}
-                    </p>
+              {MINUTE_FIELD_LABELS.map(([field, label], i) => {
+                const { h, m } = splitHourMinute(minuteValues[field]);
+                return (
+                  <div key={field} className={`flex items-center justify-between border-t border-border py-4 ${i === 0 ? "sm:border-t-0" : ""}`}>
+                    <div>
+                      <p className="text-sm text-muted-foreground">{label}</p>
+                      <p className="mt-1 text-[11px] text-[#5a7160]">
+                        {editedByUser[field] ? "직접 수정됨" : minuteValues[field] !== null ? "기기 연동" : "기록 없음"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        aria-label={`${label} 시간`}
+                        type="number"
+                        min={0}
+                        max={24}
+                        disabled={alreadyRecordedToday}
+                        value={h}
+                        onChange={e => handleHourChange(field, e.target.value)}
+                        placeholder="0"
+                        className="w-12 border-b border-transparent bg-transparent py-1 text-right text-sm font-medium outline-none focus:border-[#68796b] disabled:opacity-60"
+                      />
+                      <span className="text-xs text-muted-foreground">시간</span>
+                      <input
+                        aria-label={`${label} 분`}
+                        type="number"
+                        min={0}
+                        max={59}
+                        disabled={alreadyRecordedToday}
+                        value={m}
+                        onChange={e => handleMinuteOnlyChange(field, e.target.value)}
+                        placeholder="0"
+                        className="w-12 border-b border-transparent bg-transparent py-1 text-right text-sm font-medium outline-none focus:border-[#68796b] disabled:opacity-60"
+                      />
+                      <span className="text-xs text-muted-foreground">분</span>
+                      {!alreadyRecordedToday && minuteValues[field] !== null && (
+                        <button
+                          type="button"
+                          onClick={() => handleClearField(field)}
+                          aria-label={`${label} 지우기`}
+                          className="ml-1 text-[11px] text-muted-foreground underline underline-offset-2"
+                        >
+                          지우기
+                        </button>
+                      )}
+                      <Pencil size={14} strokeWidth={1.5} className="text-muted-foreground" />
+                    </div>
                   </div>
-                  <label className="flex items-center gap-2">
-                    <input
-                      aria-label={`${label} 수정 (분)`}
-                      type="number"
-                      min={0}
-                      max={1440}
-                      disabled={alreadyRecordedToday}
-                      value={minuteValues[field] ?? ""}
-                      onChange={e => handleMinuteChange(field, e.target.value)}
-                      placeholder="분"
-                      className="w-24 border-b border-transparent bg-transparent py-1 text-right text-sm font-medium outline-none focus:border-[#68796b] disabled:opacity-60"
-                    />
-                    <Pencil size={14} strokeWidth={1.5} className="text-muted-foreground" />
-                  </label>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {error && <p className="mt-4 text-sm text-red-500">{error}</p>}

@@ -7,6 +7,20 @@ import { logout } from "../api/auth";
 import { getBehavioralRecordByDate, type BehavioralRecordRead } from "../api/behavioralRecords";
 import { getEmotionAnalyses, type EmotionAnalysisRead } from "../api/emotionAnalyses";
 
+// TODO: 실제 법무 검토된 약관/정책 문구로 교체 필요. 지금은 화면 동작 확인용 임시 텍스트.
+const CONSENT_DETAIL_CONTENT: Record<string, string> = {
+  "서비스 이용약관":
+    "Re:Mind 서비스 이용에 관한 기본 약관이에요. 서비스는 의료적 진단을 제공하지 않으며, 기록을 바탕으로 한 참고 정보만 제공해요. (실제 약관 전문은 법무 검토 후 교체 예정)",
+  "개인정보 수집 및 이용":
+    "회원가입, 서비스 제공을 위해 이메일 등 최소한의 개인정보를 수집해요. 수집한 정보는 서비스 제공 목적 외에는 사용하지 않아요. (실제 정책 전문은 법무 검토 후 교체 예정)",
+  "건강·생활 데이터 활용 동의":
+    "수면, 휴식, 공부·업무, 운동 시간 등 생활 기록 데이터를 분석해 생활 흐름 리포트를 만드는 데 활용해요.",
+  "생활 흐름 분석 활용 동의":
+    "남기신 하루 기록 텍스트를 바탕으로 감정 상태를 분석하는 데 활용해요. AI가 분석한 결과는 참고용이에요.",
+  "선택적 외부 서비스 연동 동의":
+    "Google 캘린더, 건강 앱 등 외부 서비스와 연동해 자동으로 기록을 채우는 데 활용해요. 연동하지 않아도 서비스 이용에는 문제 없어요.",
+};
+
 function formatMinutes(min: number | null): string {
   if (min === null) return "기록 없음";
   const h = Math.floor(min / 60);
@@ -21,11 +35,13 @@ export function OverlayContent({
   close,
   go,
   selectedDate,
+  selectedConsentItem,
 }: {
   kind: OverlayKind;
   close: () => void;
   go: (screen: AppScreen) => void;
   selectedDate?: string;
+  selectedConsentItem?: string | null;
 }) {
   const [sent, setSent] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -331,6 +347,18 @@ export function OverlayContent({
             </div>
           )}
         </div>
+      </>
+    );
+  }
+
+  if (kind === "consent-detail") {
+    const content = selectedConsentItem ? CONSENT_DETAIL_CONTENT[selectedConsentItem] : null;
+    return (
+      <>
+        {selectedConsentItem && <h3 className="font-serif text-lg leading-8">{selectedConsentItem}</h3>}
+        <p className="mt-4 text-sm leading-7 text-muted-foreground">
+          {content ?? "이 항목의 내용을 확인할 수 있어요. 동의 범위는 언제든 마이페이지에서 다시 살펴볼 수 있어요."}
+        </p>
       </>
     );
   }

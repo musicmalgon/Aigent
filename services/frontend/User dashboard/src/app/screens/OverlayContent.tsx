@@ -6,6 +6,18 @@ import { getCurrentUser, updateUserName, updateUserPassword, deleteAccountData, 
 import { logout } from "../api/auth";
 import { getBehavioralRecordByDate, type BehavioralRecordRead } from "../api/behavioralRecords";
 import { getEmotionAnalyses, type EmotionAnalysisRead } from "../api/emotionAnalyses";
+import { getCurrentConsents, type ConsentRecord, type ConsentType } from "../api/consents";
+
+// 화면에 보여줄 5개 항목 -> 백엔드 ConsentType 매핑 (Consent.tsx와 완전히 동일한 이름 사용 — "자세히" 상세 문구를 같이 찾아 쓰기 위함)
+const CONSENT_ITEM_TYPE_MAP: Record<string, ConsentType> = {
+  "건강·생활 데이터 활용 동의": "health_data",
+  "생활 흐름 분석 활용 동의": "emotion_diary",
+};
+
+function formatConsentDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}`;
+}
 
 // TODO: 실제 법무 검토된 약관/정책 문구로 교체 필요. 지금은 화면 동작 확인용 임시 텍스트.
 const CONSENT_DETAIL_CONTENT: Record<string, string> = {
@@ -51,6 +63,10 @@ export function OverlayContent({
   const [recordEmotion, setRecordEmotion] = useState<EmotionAnalysisRead | null>(null);
   const [recordLoading, setRecordLoading] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
+
+  // --- consent-history 전용 상태 ---
+  const [consentRecords, setConsentRecords] = useState<ConsentRecord[]>([]);
+  const [consentLoading, setConsentLoading] = useState(false);
 
   // --- account 전용 상태 ---
   const [accountUser, setAccountUser] = useState<UserRead | null>(null);
@@ -99,6 +115,25 @@ export function OverlayContent({
       cancelled = true;
     };
   }, [kind, selectedDate]);
+
+  useEffect(() => {
+    if (kind !== "consent-history") return;
+    let cancelled = false;
+    setConsentLoading(true);
+    (async () => {
+      try {
+        const records = await getCurrentConsents();
+        if (!cancelled) setConsentRecords(records);
+      } catch {
+        // 무시 — 아래에서 항목별로 "기록 없음"으로 표시됨
+      } finally {
+        if (!cancelled) setConsentLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [kind]);
 
   useEffect(() => {
     if (kind !== "account") return;
@@ -235,17 +270,36 @@ export function OverlayContent({
       </>
     );
 
-  if (kind === "consent-history")
+  if (kind === "consent-history") {
+    if (consentLoading) return <p className="text-sm text-muted-foreground">불러오는 중...</p>;
     return (
       <div className="divide-y divide-border border-y border-border">
         {(
           [
-            ["서비스 이용약관", "필수 · 2026. 7. 18"],
-            ["개인정보 수집 및 이용", "필수 · 2026. 7. 18"],
-            ["생활·건강 데이터 활용", "필수 · 2026. 7. 18"],
-            ["생활 흐름 분석 활용", "필수 · 2026. 7. 18"],
-            ["외부 서비스 연동", "선택 · 동의 안 함"],
+            ["서비스 이용약관", "필수"],
+            ["개인정보 수집 및 이용", "필수"],
+            ["건강·생활 데이터 활용 동의", "필수"],
+            ["생활 흐름 분석 활용 동의", "필수"],
+            ["선택적 외부 서비스 연동 동의", "선택"],
           ] as const
+        ).map(([x, requiredLabel]) => {
+          const consentType = CONSENT_ITEM_TYPE_MAP[x];
+          const record = consentType ? consentRecords.find(r => r.consent_type === consentType) : undefined;
+          const statusLabel = consentType
+            ? record?.status === "granted"
+              ? `${requiredLabel} · ${formatConsentDate(record.granted_at)}`
+              : `${requiredLabel} · 동의 안 함`
+            : `${requiredLabel} · 가입 시 동의`;
+          return (
+            <div className="flex items-center justify-between gap-4 py-4" key={x}>
+              <div>
+                <p className="text-sm">{x}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{statusLabel}</p>
+              </div>
+              <button onClick={() => onOpenConsentDetail?.(x)} className="text-xs text-[#536458] underline underline-offset-4">자세히</button>
+            </div>
+          );
+        })}
         ).map(([x, y]) => (
           <div className="flex items-center justify-between gap-4 py-4" key={x}>
             <div>
@@ -257,6 +311,7 @@ export function OverlayContent({
         ))}
       </div>
     );
+  }
 
   if (kind === "account") {
     if (accountLoading) {

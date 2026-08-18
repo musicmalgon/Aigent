@@ -4,8 +4,6 @@ import { Brand } from "./components/common";
 import { Overlay } from "./components/Overlay";
 import { nav, type AppScreen, type OnboardMode, type OverlayKind } from "./types";
 import { getCurrentUser } from "./api/users";
-import { getAccessToken, setAccessToken } from "./api/client";
-import { logout } from "./api/auth";
 
 import { Welcome } from "../app/screens/Welcome";
 import { Auth } from "../app/screens/Auth";
@@ -37,51 +35,6 @@ export default function App() {
   // "이용약관", "개인정보 수집" 등 어떤 동의 항목의 "자세히"를 눌렀는지 기억해둠
   const [selectedConsentItem, setSelectedConsentItem] = useState<string | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
-  // localStorage에 남은 토큰으로 세션을 복구하는 중인지. 이게 끝나기 전에
-  // 화면을 그리면 로그인된 사용자한테도 잠깐 welcome이 보였다가 home으로
-  // 바뀌는 깜빡임이 생긴다.
-  const [restoringSession, setRestoringSession] = useState(true);
-
-  // 앱을 새로 열 때(브라우저 새로고침, 웹뷰 프로세스 재시작 등) React 상태는
-  // 항상 초기값 "welcome"부터 다시 시작한다. 토큰은 localStorage에 남아있어도
-  // 그 자체로는 화면을 바꿔주지 않으므로, 로그인된 사용자를 home으로
-  // 보내주는 건 이 마운트 시점 체크가 유일한 진입점이다.
-  useEffect(() => {
-    let cancelled = false;
-
-    // 구글 로그인 콜백은 프론트 URL에 ?token=<jwt>를 붙여서 돌아온다
-    // (백엔드 auth_google.py의 리다이렉트 참고). 세션 복구보다 먼저
-    // 처리해야 localStorage에 남아있던 예전 토큰이 아니라 방금 발급된
-    // 토큰을 쓴다.
-    const oauthToken = new URLSearchParams(window.location.search).get("token");
-    if (oauthToken) {
-      setAccessToken(oauthToken);
-      // 주소창에 토큰이 남아있으면 새로고침/공유/브라우저 기록으로 샐 수
-      // 있으니 처리하자마자 지운다.
-      window.history.replaceState(null, "", window.location.pathname);
-    }
-
-    if (!getAccessToken()) {
-      setRestoringSession(false);
-      return;
-    }
-    (async () => {
-      try {
-        const user = await getCurrentUser();
-        if (cancelled) return;
-        setUserName(user.name);
-        setScreen("home");
-      } catch {
-        // 토큰이 만료/무효화됐을 수 있음 -- 지워서 welcome에서 새로 로그인하게 함
-        logout();
-      } finally {
-        if (!cancelled) setRestoringSession(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,14 +50,6 @@ export default function App() {
       cancelled = true;
     };
   }, [screen]);
-
-  if (restoringSession) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-background">
-        <p className="text-sm text-muted-foreground">불러오는 중...</p>
-      </div>
-    );
-  }
 
   const shell = ["home", "record", "past", "report", "plan", "profile"].includes(screen);
   const current = nav.find(item => item.id === screen);

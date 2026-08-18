@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { Field, NoteMark } from "../components/common";
 import type { AppScreen } from "../types";
+import { login as loginRequest, signup as signupRequest} from "../api/auth";
 import { login as loginRequest, signup as signupRequest } from "../api/auth";
 import { BASE_URL } from "../api/client";
 
@@ -27,6 +28,12 @@ export function Auth({
     event.preventDefault();
     setError(null);
 
+    // 회원가입 시 이름 입력 필수 체크
+    if (signup && !name.trim()) {
+      setError("이름을 입력해 주세요.");
+      return;
+    }
+
     if (signup && password !== passwordConfirm) {
       setError("비밀번호가 일치하지 않습니다.");
       return;
@@ -35,6 +42,8 @@ export function Auth({
     setLoading(true);
     try {
       if (signup) {
+        // name의 공백 제거 후 확실하게 전달
+        await signupRequest(email, password, name.trim());
         await signupRequest(email, password);
         // 회원가입 성공 후 바로 로그인까지 시켜서 토큰을 받아둠
         await loginRequest(email, password);
@@ -83,7 +92,12 @@ export function Auth({
           <form onSubmit={handleSubmit} className="border-t border-border pt-5">
             <div className="space-y-4">
               {signup && (
-                <Field label="이름" placeholder="이름을 입력해 주세요" value={name} onChange={e => setName(e.target.value)} />
+                <Field
+                  label="이름"
+                  placeholder="이름을 입력해 주세요"
+                  value={name}
+                  onChange={(e: any) => setName(e.target ? e.target.value : e)}
+                />
               )}
               <Field
                 label="이메일"
@@ -123,6 +137,7 @@ export function Auth({
             <div className="my-6 flex items-center gap-3 text-[11px] text-muted-foreground">
               <span className="h-px flex-1 bg-border" />또는<span className="h-px flex-1 bg-border" />
             </div>
+            <button className="flex w-full items-center justify-between border-b border-border py-3 text-sm">
             <button
               type="button"
               onClick={() => {

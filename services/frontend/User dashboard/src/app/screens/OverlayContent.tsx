@@ -36,12 +36,16 @@ export function OverlayContent({
   go,
   selectedDate,
   selectedConsentItem,
+  onUserNameChange,
+  onOpenConsentDetail,
 }: {
   kind: OverlayKind;
   close: () => void;
   go: (screen: AppScreen) => void;
   selectedDate?: string;
   selectedConsentItem?: string | null;
+  onUserNameChange?: (name: string) => void;
+  onOpenConsentDetail?: (item: string) => void;
 }) {
   const [sent, setSent] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -132,6 +136,7 @@ export function OverlayContent({
     try {
       const updated = await updateUserName(nameInput.trim());
       setAccountUser(updated);
+      onUserNameChange?.(updated.name);
       setEditing(null);
     } catch (err) {
       setNameError(err instanceof Error ? err.message : "이름 변경 중 오류가 발생했습니다.");
@@ -252,7 +257,7 @@ export function OverlayContent({
               <p className="text-sm">{x}</p>
               <p className="mt-1 text-xs text-muted-foreground">{y}</p>
             </div>
-            <button className="text-xs text-[#536458] underline underline-offset-4">자세히</button>
+            <button onClick={() => onOpenConsentDetail?.(x)} className="text-xs text-[#536458] underline underline-offset-4">자세히</button>
           </div>
         ))}
       </div>
@@ -355,6 +360,14 @@ export function OverlayContent({
     const content = selectedConsentItem ? CONSENT_DETAIL_CONTENT[selectedConsentItem] : null;
     return (
       <>
+        {onOpenConsentDetail && (
+          <button
+            onClick={() => onOpenConsentDetail("__back_to_history__")}
+            className="mb-4 text-xs text-muted-foreground underline underline-offset-4"
+          >
+            ← 동의내역으로
+          </button>
+        )}
         {selectedConsentItem && <h3 className="font-serif text-lg leading-8">{selectedConsentItem}</h3>}
         <p className="mt-4 text-sm leading-7 text-muted-foreground">
           {content ?? "이 항목의 내용을 확인할 수 있어요. 동의 범위는 언제든 마이페이지에서 다시 살펴볼 수 있어요."}

@@ -5,7 +5,18 @@ from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.security import hash_password, verify_password
 from app.models.user import User
-from app.schemas.user import PasswordUpdate, UserNameUpdate, UserRead, UserTypeUpdate
+from app.schemas.user import (
+    AccountDataDeleteRequest,
+    AccountDataDeletionSummaryRead,
+    PasswordUpdate,
+    UserNameUpdate,
+    UserRead,
+    UserTypeUpdate,
+)
+from app.services.account_data import (
+    AccountDataDeletionSummary,
+    delete_all_account_data,
+)
 
 router = APIRouter()
 
@@ -54,3 +65,20 @@ def update_user_password(
         )
     current_user.hashed_password = hash_password(payload.new_password)
     db.commit()
+
+
+@router.delete("/users/me/data", response_model=AccountDataDeletionSummaryRead)
+def delete_account_data(
+    payload: AccountDataDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AccountDataDeletionSummary:
+    # 되돌릴 수 없는 삭제라 비밀번호 변경과 같은 재확인 관문을 둔다.
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="현재 비밀번호가 일치하지 않습니다",
+        )
+    summary = delete_all_account_data(db, user_id=current_user.id)
+    db.commit()
+    return summary

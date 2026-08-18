@@ -40,7 +40,7 @@ BASE_PATH = "/api/v1/emotion-analyses"
 DAILY_RECORD_PATH = "/api/v1/behavioral-records"
 CONSENTS_PATH = "/api/v1/consents"
 RECORD_DATE = "2026-07-20"
-PASSWORD = "correct-horse-battery-staple"
+PASSWORD = "correct-horse-battery-staple1!"
 Handler = Callable[[httpx.Request], httpx.Response]
 
 

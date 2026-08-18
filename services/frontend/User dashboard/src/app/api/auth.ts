@@ -3,6 +3,7 @@ import { apiFetch, setAccessToken } from "./client";
 export interface UserRead {
   id: string;
   email: string;
+  name: string;
 }
 
 export interface TokenResponse {
@@ -10,10 +11,10 @@ export interface TokenResponse {
   token_type?: string;
 }
 
-export async function signup(email: string, password: string): Promise<UserRead> {
+export async function signup(email: string, password: string, name: string): Promise<UserRead> {
   return apiFetch<UserRead>("/auth/signup", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, name }),
   });
 }
 

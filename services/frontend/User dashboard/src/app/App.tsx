@@ -4,7 +4,7 @@ import { Brand } from "./components/common";
 import { Overlay } from "./components/Overlay";
 import { nav, type AppScreen, type OnboardMode, type OverlayKind } from "./types";
 import { getCurrentUser } from "./api/users";
-import { getAccessToken } from "./api/client";
+import { getAccessToken, setAccessToken } from "./api/client";
 import { logout } from "./api/auth";
 
 import { Welcome } from "../app/screens/Welcome";
@@ -48,6 +48,19 @@ export default function App() {
   // 보내주는 건 이 마운트 시점 체크가 유일한 진입점이다.
   useEffect(() => {
     let cancelled = false;
+
+    // 구글 로그인 콜백은 프론트 URL에 ?token=<jwt>를 붙여서 돌아온다
+    // (백엔드 auth_google.py의 리다이렉트 참고). 세션 복구보다 먼저
+    // 처리해야 localStorage에 남아있던 예전 토큰이 아니라 방금 발급된
+    // 토큰을 쓴다.
+    const oauthToken = new URLSearchParams(window.location.search).get("token");
+    if (oauthToken) {
+      setAccessToken(oauthToken);
+      // 주소창에 토큰이 남아있으면 새로고침/공유/브라우저 기록으로 샐 수
+      // 있으니 처리하자마자 지운다.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
     if (!getAccessToken()) {
       setRestoringSession(false);
       return;

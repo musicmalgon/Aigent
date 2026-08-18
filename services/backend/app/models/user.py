@@ -43,24 +43,10 @@ class User(Base):
         index=True,
         nullable=False,
     )
-    # 구글 로그인 사용자는 비밀번호가 없으므로 nullable로 변경
-    hashed_password: Mapped[str | None] = mapped_column(String, nullable=True)
+    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[str | None] = mapped_column(String, nullable=True)
     user_type: Mapped[UserType | None] = mapped_column(
         Enum(UserType, name="usertype"),
-        nullable=True,
-    )
-    # --- Google OAuth ---
-    google_sub: Mapped[str | None] = mapped_column(
-        String,
-        unique=True,
-        index=True,
-        nullable=True,
-    )
-    google_access_token: Mapped[str | None] = mapped_column(String, nullable=True)
-    google_refresh_token: Mapped[str | None] = mapped_column(String, nullable=True)
-    google_token_expiry: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(

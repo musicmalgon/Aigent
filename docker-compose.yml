@@ -32,12 +32,3 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-
-  frontend:
-    build:
-      context: "./services/frontend/User dashboard"
-      args:
-        VITE_API_BASE_URL: "http://34.64.211.201:8000"
-    ports:
-      - "3000:80"
-    restart: unless-stopped

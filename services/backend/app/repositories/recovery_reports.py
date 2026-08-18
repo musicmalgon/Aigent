@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import Any, cast
 
-from sqlalchemy import CursorResult, delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.recovery.catalog import CATALOG_VERSION
@@ -115,25 +114,8 @@ def list_recovery_reports(
     return list(session.scalars(statement))
 
 
-def delete_all_recovery_reports_for_user(
-    session: Session,
-    *,
-    user_id: str,
-) -> int:
-    # Session.execute의 정적 반환 타입은 Result지만 DML은 CursorResult를 준다.
-    result = cast(
-        "CursorResult[Any]",
-        session.execute(
-            delete(RecoveryReport).where(RecoveryReport.user_id == user_id)
-        ),
-    )
-    session.flush()
-    return result.rowcount
-
-
 __all__ = [
     "create_recovery_report",
-    "delete_all_recovery_reports_for_user",
     "get_latest_recovery_report",
     "get_recovery_report",
     "list_recovery_reports",

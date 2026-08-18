@@ -88,43 +88,6 @@ SQLADMIN_PATH=/internal-admin
 
 `APP_ENV=test` and `APP_ENV=production` reject enabled SQLAdmin.
 
-## Demo seed data
-
-`app/scripts/seed_demo_data.py` populates the configured database with three
-demo accounts for the academic-festival presentation. It runs directly against
-`DATABASE_URL` — no HTTP server needs to be running — but every derived artifact
-(baseline, risk evaluation, recovery report) is produced by the same service
-functions the API handlers call. Nothing is precomputed and inserted.
-
-Apply migrations first, then run from `services/backend`:
-
-```powershell
-python -m alembic upgrade head
-python -m app.scripts.seed_demo_data
-```
-
-The three accounts all use the password `Demo1234!` and are created with
-`health_data` consent already granted, so they are not blocked by the
-consent-gated write endpoints:
-
-| Email | Demonstrates | Seeded artifacts |
-| --- | --- | --- |
-| `demo-insufficient@remind.example` | `insufficient_records` readiness | 4 daily records only (below `MINIMUM_SAMPLE_DAYS`), no baseline |
-| `demo-normal@remind.example` | `baseline_ready` readiness | 21 stable daily records and a READY baseline, no risk evaluation |
-| `demo-high-risk@remind.example` | Elevated risk from sleep and rest decline | 21 daily records (last 7 degraded), READY baseline, `high` risk evaluation, recovery report |
-
-The high-risk account also has `emotion_diary` consent.
-
-The AI service is optional. With it running and `GEMINI_API_KEY` configured, the
-recovery report is stored as `llm_generated`; otherwise the generator degrades to
-`template_fallback`, which is an equally valid demo state. Emotion analysis is
-attempted only when the AI service answers its readiness probe, because emotion
-results must always come from the live model — the script never fabricates one
-and skips the step with a printed message instead.
-
-The script is safe to re-run: it skips any scenario whose demo account already
-exists rather than failing on a duplicate email.
-
 ## Schema migrations
 
 Alembic is the schema source of truth. Importing the application does not call

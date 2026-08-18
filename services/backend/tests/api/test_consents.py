@@ -5,7 +5,7 @@ from typing import cast
 from fastapi.testclient import TestClient
 
 BASE_PATH = "/api/v1/consents"
-PASSWORD = "correct-horse-battery-staple1!"
+PASSWORD = "correct-horse-battery-staple"
 SOURCE = "onboarding_consent_screen"
 
 

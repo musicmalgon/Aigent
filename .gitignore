@@ -65,7 +65,6 @@ env/
 # Editor and local files
 .idea/
 .vscode/
-.omc/
 *.swp
 *.swo
 *.tmp

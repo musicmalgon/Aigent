@@ -29,7 +29,7 @@ from app.services import baselines as service_module
 from app.services.baselines import BASELINE_ALGORITHM_VERSION
 
 BASE_PATH = "/api/v1/baselines"
-PASSWORD = "correct-horse-battery-staple1!"
+PASSWORD = "correct-horse-battery-staple"
 TODAY = date(2026, 7, 27)
 
 

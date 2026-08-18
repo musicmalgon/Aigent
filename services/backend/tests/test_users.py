@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 def authenticated_headers(client: TestClient) -> dict[str, str]:
     credentials = {
         "email": "person@example.com",
-        "password": "correct-horse-battery-staple1!",
+        "password": "correct-horse-battery-staple",
     }
     assert client.post("/auth/signup", json=credentials).status_code == 201
     response = client.post("/auth/login", json=credentials)

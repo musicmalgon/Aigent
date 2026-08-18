@@ -6,11 +6,4 @@
         <domain includeSubdomains="false">localhost</domain>
         <domain includeSubdomains="false">127.0.0.1</domain>
     </domain-config>
-
-    <!-- WebView 통합(#102): 배포된 웹 프론트엔드가 아직 HTTP뿐이라 이 IP
-         하나에만 좁게 cleartext를 허용한다. 위 로컬 전용 블록과는 분리해서
-         "다른 비로컬 호스트로 넓히지 않는다"는 원칙을 유지한다. -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">34.64.211.201</domain>
-    </domain-config>
 </network-security-config>

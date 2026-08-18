@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, cast
 
-from sqlalchemy import CursorResult, delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.persistence import BehavioralDailyRecord
@@ -128,29 +127,9 @@ def delete_daily_record(
     session.delete(record)
     session.flush()
 
-
-def delete_all_daily_records_for_user(
-    session: Session,
-    *,
-    user_id: str,
-) -> int:
-    # Session.execute의 정적 반환 타입은 Result지만 DML은 CursorResult를 준다.
-    result = cast(
-        "CursorResult[Any]",
-        session.execute(
-            delete(BehavioralDailyRecord).where(
-                BehavioralDailyRecord.user_id == user_id
-            )
-        ),
-    )
-    session.flush()
-    return result.rowcount
-
-
 __all__ = [
     "count_daily_records",
     "create_daily_record",
-    "delete_all_daily_records_for_user",
     "get_daily_record",
     "get_daily_record_by_date",
     "list_daily_records",

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, cast
 
-from sqlalchemy import CursorResult, delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.persistence import (
@@ -108,27 +107,8 @@ def list_baselines(
     return list(session.scalars(statement))
 
 
-def delete_all_baselines_for_user(
-    session: Session,
-    *,
-    user_id: str,
-) -> int:
-    # Session.execute의 정적 반환 타입은 Result지만 DML은 CursorResult를 준다.
-    result = cast(
-        "CursorResult[Any]",
-        session.execute(
-            delete(BehavioralBaseline).where(
-                BehavioralBaseline.user_id == user_id
-            )
-        ),
-    )
-    session.flush()
-    return result.rowcount
-
-
 __all__ = [
     "create_baseline",
-    "delete_all_baselines_for_user",
     "get_baseline",
     "get_latest_ready_baseline",
     "get_latest_ready_baseline_before",

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from app.core.security import create_access_token
 
 EMAIL = "user@example.com"
-PASSWORD = "correct-horse-battery-staple1!"
+PASSWORD = "correct-horse-battery-staple"
 
 
 def signup(client: TestClient, email: str = EMAIL) -> dict[str, object]:

@@ -28,7 +28,7 @@ from tests.daily_record_contract import (
 
 BASE_PATH = "/api/v1/behavioral-records"
 CONSENTS_PATH = "/api/v1/consents"
-PASSWORD = "correct-horse-battery-staple1!"
+PASSWORD = "correct-horse-battery-staple"
 
 
 def authenticated_user_without_consent(

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
-from typing import Any, cast
 
-from sqlalchemy import CursorResult, delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.risk.models import BurnoutRiskEvaluationResponse
@@ -182,27 +181,8 @@ def list_dated_risk_evaluations(
     return list(session.scalars(statement))
 
 
-def delete_all_risk_evaluations_for_user(
-    session: Session,
-    *,
-    user_id: str,
-) -> int:
-    # Session.execute의 정적 반환 타입은 Result지만 DML은 CursorResult를 준다.
-    result = cast(
-        "CursorResult[Any]",
-        session.execute(
-            delete(BurnoutRiskEvaluation).where(
-                BurnoutRiskEvaluation.user_id == user_id
-            )
-        ),
-    )
-    session.flush()
-    return result.rowcount
-
-
 __all__ = [
     "create_risk_evaluation",
-    "delete_all_risk_evaluations_for_user",
     "get_latest_dated_risk_evaluation",
     "get_latest_risk_evaluation",
     "get_risk_evaluation",

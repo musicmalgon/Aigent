@@ -48,7 +48,7 @@ from app.services.risk_evaluation import (
 from tests.daily_record_contract import canonical_daily_record_payload
 
 BASE_PATH = "/api/v1/risk-evaluations"
-PASSWORD = "correct-horse-battery-staple1!"
+PASSWORD = "correct-horse-battery-staple"
 CONTRACT_PATH = (
     Path(__file__).resolve().parents[4]
     / "packages"

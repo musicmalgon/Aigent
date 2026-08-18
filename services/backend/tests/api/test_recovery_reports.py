@@ -27,7 +27,7 @@ from app.models.persistence import (
 from tests.persistence.helpers import daily_record
 
 BASE_PATH = "/api/v1/recovery-reports"
-PASSWORD = "correct-horse-battery-staple"
+PASSWORD = "correct-horse-battery-staple1!"
 REPORT_DATE = date(2026, 7, 20)
 
 

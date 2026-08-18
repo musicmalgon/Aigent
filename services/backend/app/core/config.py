@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     )
     ai_service_auth_token: SecretStr | None = None
 
+    # --- Google OAuth ---
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
+    # 로그인 성공 후 프론트로 되돌려보낼 때 붙일 base URL (쿼리스트링으로 토큰 전달)
+    google_oauth_frontend_redirect_url: str = "http://localhost:5173/oauth/callback"
+
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, value: str) -> str:
@@ -104,6 +111,19 @@ class Settings(BaseSettings):
             stripped = value.strip()
             return stripped or None
         return value
+
+    @field_validator("google_redirect_uri", "google_oauth_frontend_redirect_url")
+    @classmethod
+    def validate_google_urls(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        parsed = urlsplit(normalized)
+        if (
+            not normalized
+            or parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+        ):
+            raise ValueError("must be a valid HTTP(S) URL")
+        return normalized
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":

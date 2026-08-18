@@ -5,6 +5,13 @@
     <uses-permission android:name="android.permission.health.READ_STEPS" />
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <!--
+        앱이 포그라운드가 아닐 때의 Health Connect 읽기를 허용하는 별도 권한.
+        위 READ_* 권한이 승인돼 있어도 이게 없으면 백그라운드 동기화 시점의
+        읽기는 실패한다. 요청 자체도 포그라운드 권한 승인 이후 별도 단계로
+        진행한다 (MainActivity 참고).
+    -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
     <uses-permission android:name="android.permission.INTERNET" />
 
     <queries>

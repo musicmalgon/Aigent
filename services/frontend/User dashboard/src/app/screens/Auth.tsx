@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { Field, NoteMark } from "../components/common";
 import type { AppScreen } from "../types";
-import { login as loginRequest, signup as signupRequest } from "../api/auth";
+import { login as loginRequest, signup as signupRequest, startGoogleLogin } from "../api/auth";
 
 export function Auth({
   mode,
@@ -34,7 +34,7 @@ export function Auth({
     setLoading(true);
     try {
       if (signup) {
-        await signupRequest(email, password);
+        await signupRequest(email, password, name);
         // 회원가입 성공 후 바로 로그인까지 시켜서 토큰을 받아둠
         await loginRequest(email, password);
         go("consent");
@@ -122,7 +122,7 @@ export function Auth({
             <div className="my-6 flex items-center gap-3 text-[11px] text-muted-foreground">
               <span className="h-px flex-1 bg-border" />또는<span className="h-px flex-1 bg-border" />
             </div>
-            <button type="button" className="flex w-full items-center justify-between border-b border-border py-3 text-sm">
+            <button type="button" onClick={startGoogleLogin} className="flex w-full items-center justify-between border-b border-border py-3 text-sm">
               <span>Google 계정으로 계속하기</span>
               <ChevronRight size={16} className="text-muted-foreground" />
             </button>

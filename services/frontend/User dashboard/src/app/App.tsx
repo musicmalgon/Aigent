@@ -4,6 +4,7 @@ import { Brand } from "./components/common";
 import { Overlay } from "./components/Overlay";
 import { nav, type AppScreen, type OnboardMode, type OverlayKind } from "./types";
 import { getCurrentUser } from "./api/users";
+import { consumeGoogleLoginCallback } from "./api/auth";
 
 import { Welcome } from "../app/screens/Welcome";
 import { Auth } from "../app/screens/Auth";
@@ -25,7 +26,7 @@ function todayDateString() {
 }
 
 export default function App() {
-  const [screen, setScreen] = useState<AppScreen>("welcome");
+  const [screen, setScreen] = useState<AppScreen>(() => (consumeGoogleLoginCallback() ? "home" : "welcome"));
   const [menu, setMenu] = useState(false);
   const [overlay, setOverlay] = useState<OverlayKind>(null);
   const [onboardMode, setOnboardMode] = useState<OnboardMode>("brief");
@@ -34,6 +35,15 @@ export default function App() {
   const [selectedRecordDate, setSelectedRecordDate] = useState<string>(todayDateString());
   // "이용약관", "개인정보 수집" 등 어떤 동의 항목의 "자세히"를 눌렀는지 기억해둠
   const [selectedConsentItem, setSelectedConsentItem] = useState<string | null>(null);
+
+  const openConsentDetail = (item: string) => {
+    if (item === "__back_to_history__") {
+      setOverlay("consent-history");
+      return;
+    }
+    setSelectedConsentItem(item);
+    setOverlay("consent-detail");
+  };
   const [userName, setUserName] = useState<string | null>(null);
 
   useEffect(() => {
@@ -86,7 +96,7 @@ export default function App() {
       <>
         {view[screen]}
         <Overlay open={overlay !== null} onClose={() => setOverlay(null)} title={overlay === "forgot" ? "비밀번호 찾기" : overlay === "consent-detail" ? "동의 내용" : ""}>
-          <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} selectedConsentItem={selectedConsentItem} onUserNameChange={setUserName} />
+          <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} selectedConsentItem={selectedConsentItem} onUserNameChange={setUserName} onOpenConsentDetail={openConsentDetail} />
         </Overlay>
       </>
     );
@@ -156,7 +166,7 @@ export default function App() {
           ))}
       </nav>
       <Overlay open={overlay !== null} onClose={() => setOverlay(null)} title={overlay ? overlayTitle[overlay] : ""}>
-        <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} selectedConsentItem={selectedConsentItem} onUserNameChange={setUserName} />
+        <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} selectedConsentItem={selectedConsentItem} onUserNameChange={setUserName} onOpenConsentDetail={openConsentDetail} />
       </Overlay>
     </div>
   );

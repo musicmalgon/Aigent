@@ -270,8 +270,24 @@ export function OverlayContent({
       <>
         <p className="text-sm leading-6 text-muted-foreground">연동된 기록도 직접 수정한 값이 우선해요.</p>
         <Integration name="Google Calendar" detail="일정 개수와 바쁜 시간대를 기록에 참고해요." connected={connected} setConnected={setConnected} />
-        <Integration name="Samsung Health" detail="수면과 활동 기록을 오늘 기록에 가져와요." connected={false} setConnected={() => {}} />
-        <p className="mt-6 text-xs leading-5 text-muted-foreground">실제 연결 기능은 준비 중이에요. 현재 화면에서는 연결 흐름만 미리 볼 수 있어요.</p>
+        {/* Health Connect(삼성헬스 등)는 브라우저에서 접근 불가능한 안드로이드
+            전용 API라 이 웹 화면에서 누른다고 연결되는 구조가 아니다. 실제
+            연동은 모바일 앱의 권한 허용으로 이미 자동으로 이뤄지고 있어서
+            (SyncWorker, #37/#109) Google Calendar와 같은 "연결하기" 토글
+            대신 상태를 정확히 안내하는 문구만 보여준다. */}
+        <div className="border-b border-border py-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Samsung Health</p>
+              <p className="mt-1 max-w-xs text-xs leading-5 text-muted-foreground">수면과 활동 기록을 오늘 기록에 가져와요.</p>
+            </div>
+            <span className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground">모바일 앱에서 연동</span>
+          </div>
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            이 웹 화면에서는 연결할 수 없어요 — 리마인드 모바일 앱에서 Health Connect 권한을 허용하면 자동으로 동기화돼요.
+          </p>
+        </div>
+        <p className="mt-6 text-xs leading-5 text-muted-foreground">Google Calendar 연동은 아직 준비 중이에요. 현재 화면에서는 연결 흐름만 미리 볼 수 있어요.</p>
       </>
     );
 

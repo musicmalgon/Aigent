@@ -35,16 +35,24 @@ async def google_callback(
 
     google_sub = userinfo["sub"]
     email = userinfo["email"]
+    google_name = userinfo.get("name")
 
     user = db.query(User).filter(User.google_sub == google_sub).first()
     if not user:
         # 같은 이메일로 이미 (비밀번호) 가입된 계정이 있으면 그 계정에 연결
         user = db.query(User).filter(User.email == email).first()
         if user is None:
-            user = User(email=email, google_sub=google_sub)
+            user = User(email=email, google_sub=google_sub, name=google_name)
             db.add(user)
         else:
             user.google_sub = google_sub
+
+    # 이 경로엔 이름 입력 폼이 없어서(이메일 가입과 다름) 구글 프로필 이름을
+    # 대신 채워준다. 이미 이름이 있으면(비번 가입 계정에 연결된 경우 등)
+    # 덮어쓰지 않고, 과거에 이름 없이 생성된 계정(#127)만 다음 로그인 때
+    # 채워지도록 함.
+    if not user.name and google_name:
+        user.name = google_name
 
     access_token = token.get("access_token")
     refresh_token = token.get("refresh_token")

@@ -37,7 +37,13 @@ services:
     build:
       context: "./services/frontend/User dashboard"
       args:
-        VITE_API_BASE_URL: "http://34.64.211.201:8000"
+        # 구글 OAuth 콜백(redirect_uri)이 nip.io 도메인으로 등록돼 있어서
+        # (백엔드 .env의 GOOGLE_REDIRECT_URI) 로그인 시작 지점도 반드시
+        # 같은 도메인이어야 함. 세션 쿠키(SessionMiddleware)가 domain=
+        # 지정 없이 host-only로 발급되기 때문에, 로그인 시작을 IP로
+        # 하면 콜백(nip.io)에 그 쿠키가 안 실려가서 state 검증이
+        # 실패한다 (#123).
+        VITE_API_BASE_URL: "http://34.64.211.201.nip.io:8000"
     ports:
       - "3000:80"
     restart: unless-stopped

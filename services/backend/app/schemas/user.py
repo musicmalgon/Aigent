@@ -71,3 +71,5 @@ class AccountDataDeletionSummaryRead(BaseModel):
     baselines_deleted: int
     emotion_analyses_deleted: int
     daily_records_deleted: int
+    consent_records_deleted: int
+    assessment_anchors_deleted: int

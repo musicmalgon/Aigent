@@ -79,6 +79,6 @@ def delete_account_data(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="현재 비밀번호가 일치하지 않습니다",
         )
-    summary = delete_all_account_data(db, user_id=current_user.id)
+    summary = delete_all_account_data(db, user=current_user)
     db.commit()
     return summary

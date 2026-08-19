@@ -9,6 +9,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.remind.mobile.HealthConnectManager
+import com.remind.mobile.auth.AuthStore
 import java.util.concurrent.TimeUnit
 
 const val DAILY_SYNC_WORK_NAME = "health_connect_daily_sync"
@@ -34,7 +35,12 @@ class SyncWorker(
             return Result.success()
         }
 
-        return when (val result = syncYesterdayRecord(manager)) {
+        // 로그인 전(#141)이면 보낼 계정이 없다 -- 권한 미승인과 같은 이유로
+        // 일시적 오류가 아니라 "사용자가 로그인하기 전까지는 결과가 같은"
+        // 상태라 조용히 건너뛴다.
+        val token = AuthStore(applicationContext).getToken() ?: return Result.success()
+
+        return when (val result = syncYesterdayRecord(manager, token)) {
             is SyncResult.Success,
             is SyncResult.SuccessNoData,
             SyncResult.AlreadySubmitted -> Result.success()

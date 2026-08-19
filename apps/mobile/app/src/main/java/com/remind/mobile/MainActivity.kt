@@ -38,6 +38,8 @@ import androidx.health.connect.client.PermissionController
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.remind.mobile.auth.AuthStore
+import com.remind.mobile.auth.LoginScreen
 import com.remind.mobile.network.ApiClient
 import com.remind.mobile.network.ConsentGrantRequest
 import com.remind.mobile.network.ConsentType
@@ -64,21 +66,58 @@ class MainActivity : ComponentActivity() {
         setContent {
             ReMindTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    val authStore = remember { AuthStore(applicationContext) }
+                    val scope = rememberCoroutineScope()
+
+                    // 저장된 토큰을 한 번 읽어올 때까지는 로그인/웹앱 어느 쪽도
+                    // 섣불리 그리지 않는다 -- null을 "로그인 안 됨"으로 오해해서
+                    // 로그인 화면이 잠깐 깜빡였다 사라지는 걸 막기 위함
+                    // (App.tsx의 restoringSession과 같은 이유, #119).
+                    var authToken by remember { mutableStateOf<String?>(null) }
+                    var authLoaded by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) {
+                        authToken = authStore.getToken()
+                        authLoaded = true
+                    }
+
                     // 웹 프론트엔드가 대시보드/기록/리포트 등 실사용자 화면을 이미
                     // 다 갖고 있으므로 웹앱을 기본 화면으로 띄운다. PoC 화면은
                     // Health Connect 권한/동기화를 손으로 검증할 때만 쓰는
                     // 보조 화면이라 웹 화면에서 링크로만 들어간다 (#102).
                     var showPocScreen by remember { mutableStateOf(false) }
-                    if (showPocScreen) {
-                        HealthConnectPocScreen(
-                            modifier = Modifier.padding(innerPadding),
-                            onBackToWebApp = { showPocScreen = false },
-                        )
-                    } else {
-                        WebAppScreen(
-                            modifier = Modifier.padding(innerPadding),
-                            onOpenPocScreen = { showPocScreen = true },
-                        )
+
+                    when {
+                        !authLoaded -> {
+                            // 아주 짧은 순간이라 별도 로딩 화면 없이 빈 화면으로 둠.
+                        }
+                        authToken == null -> {
+                            // 실사용자 로그인 게이트 (#141) -- 이 토큰은 WebView의
+                            // 웹 로그인(localStorage)과는 별개다. Health Connect
+                            // 동기화가 어느 계정으로 갈지 네이티브 쪽이 알아야 해서
+                            // 여기서 한 번 더 받는다. SSO 연동은 범위 밖으로 남김.
+                            LoginScreen(
+                                modifier = Modifier.padding(innerPadding),
+                                onLoginSuccess = { token ->
+                                    scope.launch {
+                                        authStore.saveToken(token)
+                                        authToken = token
+                                    }
+                                },
+                            )
+                        }
+                        showPocScreen -> {
+                            HealthConnectPocScreen(
+                                modifier = Modifier.padding(innerPadding),
+                                onBackToWebApp = { showPocScreen = false },
+                            )
+                        }
+                        else -> {
+                            WebAppScreen(
+                                modifier = Modifier.padding(innerPadding),
+                                onOpenPocScreen = { showPocScreen = true },
+                                authToken = authToken!!,
+                            )
+                        }
                     }
                 }
             }
@@ -94,9 +133,18 @@ class MainActivity : ComponentActivity() {
 // 끼워 넣을 때 쓰는 브릿지다. factory는 View를 한 번만 생성하고, update는
 // 리컴포지션마다(그리고 생성 직후) 호출돼 최신 상태를 반영한다.
 @Composable
-fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit) {
+fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit, authToken: String) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var canGoBack by remember { mutableStateOf(false) }
+
+    // "지금 동기화" 버튼 (#141) -- 숨겨진 PoC 화면이 아니라 앱의 기본 화면에
+    // 노출해서, 6시간 주기 SyncWorker를 기다리지 않고 바로 오늘/어제 데이터를
+    // 보낼 수 있게 한다.
+    val context = LocalContext.current
+    val healthConnectManager = remember { HealthConnectManager(context) }
+    val scope = rememberCoroutineScope()
+    var syncing by remember { mutableStateOf(false) }
+    var syncStatusText by remember { mutableStateOf<String?>(null) }
 
     // 여기가 앱의 홈 화면이라, 웹뷰 안에 뒤로 갈 탐색 기록이 있을 때만
     // 시스템 뒤로가기를 가로챈다. 기록이 없으면 가로채지 않고 시스템 기본
@@ -111,8 +159,37 @@ fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit) {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.End,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
+            TextButton(
+                onClick = {
+                    if (syncing) return@TextButton
+                    scope.launch {
+                        syncing = true
+                        syncStatusText = "동기화 중..."
+                        // 권한이 없으면 여기서 요청 흐름을 새로 만들지 않고
+                        // PoC 화면으로 안내한다 -- 권한 요청 UI(2단계, 백그라운드
+                        // 권한 등)가 이미 그쪽에 있어서 중복으로 안 만듦.
+                        if (!healthConnectManager.hasAllPermissions()) {
+                            syncStatusText = "Health Connect 권한이 필요해요 — PoC 테스트 화면에서 먼저 허용해 주세요."
+                            syncing = false
+                            return@launch
+                        }
+                        val result = syncYesterdayRecord(healthConnectManager, authToken)
+                        syncStatusText = when (result) {
+                            is SyncResult.Success -> "동기화 완료 (${result.date})"
+                            is SyncResult.SuccessNoData -> "동기화 완료 — 어제는 기록된 측정값이 없었어요"
+                            SyncResult.AlreadySubmitted -> "이미 어제 데이터를 보냈어요"
+                            is SyncResult.HttpFailure -> "동기화 실패 (HTTP ${result.code})"
+                            is SyncResult.Failure -> "동기화 실패: ${result.message}"
+                        }
+                        syncing = false
+                    }
+                },
+            ) {
+                Text(if (syncing) "동기화 중..." else "지금 동기화")
+            }
+
             // Health Connect 권한/동기화 수동 검증용 개발자 진입점.
             // 일반 사용자 플로우엔 없어도 되지만, 검증 화면 자체를
             // 없애지는 않기로 했다 (#102 범위).
@@ -120,6 +197,7 @@ fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit) {
                 Text("PoC 테스트 화면")
             }
         }
+        syncStatusText?.let { Text(text = it, modifier = Modifier.padding(horizontal = 8.dp)) }
 
         AndroidView(
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -350,10 +428,13 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier, onBackToWebApp: () -> 
 
         Button(
             onClick = {
+                val token = authToken ?: return@Button
                 scope.launch {
                     // 백그라운드 워커와 완전히 같은 경로를 탄다. 여기서는
-                    // 결과를 화면 문구로 옮기는 일만 한다.
-                    val result = syncYesterdayRecord(manager) { hasAnyRealData ->
+                    // 결과를 화면 문구로 옮기는 일만 한다. 이 화면은 테스트
+                    // 계정 토큰(signInTestAccount)을 쓴다 -- 실사용자 계정으로
+                    // 보내려면 웹앱 화면의 "지금 동기화" 버튼을 쓴다 (#141).
+                    val result = syncYesterdayRecord(manager, token) { hasAnyRealData ->
                         submitResultText = if (hasAnyRealData) "전송 중..."
                             else "실제 측정값 없음 — '데이터 없음' 상태로 전송 중..."
                     }
@@ -371,10 +452,6 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier, onBackToWebApp: () -> 
                     }
                 }
             },
-            // authToken 자체는 아래 호출에 안 쓰인다 -- syncYesterdayRecord가
-            // 매번 자체적으로 재로그인한다 (워커와 동일 경로를 타야 해서).
-            // 그래도 게이트로 남겨둔 이유: "로그인" 버튼을 먼저 눌러 연결이
-            // 되는지 확인시키는 수동 테스트 절차로서의 의미가 있어서다.
             enabled = permissionGranted && authToken != null
         ) {
             Text("어제 데이터 서버로 전송")

@@ -23,6 +23,7 @@ def _check_password_strength(v: str) -> str:
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
+    name: str | None = Field(default=None, min_length=1, max_length=50)
 
     @field_validator("password")
     @classmethod

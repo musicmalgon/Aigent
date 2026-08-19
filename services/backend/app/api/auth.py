@@ -23,6 +23,7 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)) -> User:
     user = User(
         email=payload.email,
         hashed_password=hash_password(payload.password),
+        name=payload.name,
     )
     db.add(user)
 

@@ -61,6 +61,10 @@ def create_app(
         CORSMiddleware,
         allow_origins=[
             "http://34.64.211.201:3000",
+            # 구글 로그인 콜백 이후 프론트가 nip.io 도메인으로 리다이렉트되므로
+            # (로그인 시작과 콜백 도메인을 맞춘 #124 때문) 이 origin도 허용해야
+            # 로그인 직후 /users/me 등 API 호출이 CORS로 막히지 않는다 (#125).
+            "http://34.64.211.201.nip.io:3000",
             "http://localhost:5173",
             "http://localhost:3000",
         ],

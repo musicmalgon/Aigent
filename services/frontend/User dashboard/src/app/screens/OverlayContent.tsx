@@ -375,6 +375,22 @@ export function OverlayContent({
             </span>
             <ChevronRight size={16} />
           </button>
+
+          {/* 계정 삭제와 달리 되돌리는 데 확인 절차가 필요 없어서 바로 실행함 */}
+          <button
+            onClick={() => {
+              logout();
+              close();
+              go("welcome");
+            }}
+            className="flex w-full items-center justify-between py-5 text-left"
+          >
+            <span>
+              <strong className="block text-sm font-medium">로그아웃</strong>
+              <span className="mt-1 block text-xs text-muted-foreground">다시 로그인하면 이어서 기록할 수 있어요.</span>
+            </span>
+            <ChevronRight size={16} />
+          </button>
         </div>
 
         <div className="mt-10 border-t border-border pt-5">

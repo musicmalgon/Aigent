@@ -1,8 +1,11 @@
-"""`DELETE /users/me/data` — 건강/행동 파생 데이터만 지우고 계정과 동의는 남긴다.
+"""`DELETE /users/me/data` — 파생 데이터와 계정 자체를 모두 지운다.
 
-이 파일이 지키려는 것은 "무엇이 지워지는가"보다 "무엇이 지워지지 *않는가*"다.
-동의 이력과 계정 행이 실수로 함께 사라지는 회귀를 잡는 것이 목적이므로,
-삭제 후 상태는 응답 본문이 아니라 DB를 직접 조회해서 확인한다.
+원래는 파생 데이터만 지우고 계정과 동의 이력은 감사 추적을 위해 보존했었다.
+하지만 그 설계가 프론트 UI 문구("계정 삭제")와 어긋난다는 문제(#133)로,
+계정 자체도 지우는 진짜 삭제로 바뀌었다. 이 파일이 지금 지키려는 것은
+"users.id를 참조하는 모든 것 -- 파생 데이터 5개 + 동의 이력 + 검사 응답 --
+이 계정과 함께 남김없이 지워지고, 삭제 후엔 기존 토큰이 더는 통하지 않는다"
+는 것이다. 삭제 후 상태는 응답 본문이 아니라 DB를 직접 조회해서도 확인한다.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
+from app.models.assessment import AssessmentAnchor
 from app.models.consent import ConsentRecord
 from app.models.persistence import (
     BehavioralBaseline,
@@ -23,12 +27,14 @@ from app.models.persistence import (
     PersistenceBaselineStatus,
     RecoveryReport,
 )
+from app.models.user import User
 from tests.daily_record_contract import canonical_daily_record_payload
 
 BASE_PATH = "/users/me/data"
 USER_PATH = "/users/me"
 CONSENT_PATH = "/api/v1/consents"
 BEHAVIORAL_PATH = "/api/v1/behavioral-records"
+ASSESSMENT_PATH = "/assessments/anchor"
 PASSWORD = "correct-horse-battery-staple1!"
 CONSENT_TYPES = ("health_data", "emotion_diary")
 RECORD_DATES = (date(2026, 7, 18), date(2026, 7, 19), date(2026, 7, 20))
@@ -76,6 +82,42 @@ def post_daily_records(client: TestClient, headers: dict[str, str]) -> None:
             ),
         )
         assert response.status_code == 201, response.text
+
+
+def post_assessment_anchor(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    supersedes_id: str | None = None,
+) -> str:
+    response = client.post(
+        ASSESSMENT_PATH,
+        headers=headers,
+        json={
+            "assessment_type": "k_bat",
+            "target_group": "university_student",
+            "completed_at": datetime.now(UTC).isoformat(),
+            "dimensions": {
+                "exhaustion": 2.0,
+                "academic_burden": 1.5,
+                "occupational_burden": None,
+                "recovery_difficulty": 1.0,
+            },
+            "source": "account_deletion_test",
+            "supersedes_id": supersedes_id,
+        },
+    )
+    assert response.status_code == 201, response.text
+    return str(response.json()["id"])
+
+
+def seed_assessment_anchors(client: TestClient, headers: dict[str, str]) -> None:
+    # 재검사가 이전 검사를 대체하는 흔한 케이스를 재현한다 -- supersedes_id로
+    # 같은 사용자의 다른 행을 자기참조하는 체인. 삭제 시 이 자기참조가 먼저
+    # 안 끊기면 FK 제약(SQLite도 PRAGMA foreign_keys=ON)에 걸릴 수 있어서,
+    # 이 체인이 있는 채로 삭제가 되는지가 이 테스트의 핵심이다.
+    first_id = post_assessment_anchor(client, headers)
+    post_assessment_anchor(client, headers, supersedes_id=first_id)
 
 
 def seed_derived_rows(engine: Engine, *, user_id: str) -> None:
@@ -175,6 +217,21 @@ def row_counts(engine: Engine, *, user_id: str) -> dict[str, int]:
         }
 
 
+def count_rows(engine: Engine, model: type, *, user_id: str) -> int:
+    with Session(engine) as session:
+        return (
+            session.scalar(
+                select(func.count()).select_from(model).where(model.user_id == user_id)
+            )
+            or 0
+        )
+
+
+def user_exists(engine: Engine, *, user_id: str) -> bool:
+    with Session(engine) as session:
+        return session.scalar(select(User).where(User.id == user_id)) is not None
+
+
 def seeded_user(
     client: TestClient,
     engine: Engine,
@@ -185,6 +242,7 @@ def seeded_user(
     grant_consents(client, headers)
     post_daily_records(client, headers)
     seed_derived_rows(engine, user_id=user_id)
+    seed_assessment_anchors(client, headers)
     return headers, user_id
 
 
@@ -222,6 +280,10 @@ def test_deletes_every_derived_table_and_reports_counts(
         email="account-deletion-happy@example.com",
     )
     assert row_counts(migrated_engine, user_id=user_id) == FULL_SEED_COUNTS
+    assert count_rows(migrated_engine, ConsentRecord, user_id=user_id) == len(
+        CONSENT_TYPES
+    )
+    assert count_rows(migrated_engine, AssessmentAnchor, user_id=user_id) == 2
 
     response = delete_account_data(client, headers)
 
@@ -232,19 +294,25 @@ def test_deletes_every_derived_table_and_reports_counts(
         "baselines_deleted": 1,
         "emotion_analyses_deleted": 1,
         "daily_records_deleted": len(RECORD_DATES),
+        "consent_records_deleted": len(CONSENT_TYPES),
+        "assessment_anchors_deleted": 2,
     }
     # 응답 본문을 믿지 않고 DB를 직접 본다.
     assert row_counts(migrated_engine, user_id=user_id) == dict.fromkeys(
         FULL_SEED_COUNTS,
         0,
     )
+    assert count_rows(migrated_engine, ConsentRecord, user_id=user_id) == 0
+    assert count_rows(migrated_engine, AssessmentAnchor, user_id=user_id) == 0
 
 
-def test_consent_records_survive_deletion(
+def test_consent_records_are_deleted_with_account(
     client: TestClient,
     migrated_engine: Engine,
 ) -> None:
-    """이 기능이 존재하는 이유 그 자체 — 동의 이력은 삭제 대상이 아니다."""
+    """이전엔 동의 이력이 감사 추적용으로 살아남았지만(#133 이전), 계정
+    자체를 지우는 진짜 삭제로 바뀌면서 재로그인이 불가능해져 감사 추적을
+    남겨둘 이유도 함께 사라졌다."""
 
     headers, user_id = seeded_user(
         client,
@@ -254,21 +322,14 @@ def test_consent_records_survive_deletion(
 
     assert delete_account_data(client, headers).status_code == 200
 
+    # 계정 자체가 지워졌으므로 그 토큰으로는 더 이상 아무 것도 조회할 수 없다.
     consents = client.get(CONSENT_PATH, headers=headers)
-    assert consents.status_code == 200, consents.text
-    assert {row["consent_type"] for row in consents.json()} == set(CONSENT_TYPES)
-    assert all(row["status"] == "granted" for row in consents.json())
+    assert consents.status_code == 401, consents.text
 
-    with Session(migrated_engine) as session:
-        stored = session.scalar(
-            select(func.count())
-            .select_from(ConsentRecord)
-            .where(ConsentRecord.user_id == user_id)
-        )
-    assert stored == len(CONSENT_TYPES)
+    assert count_rows(migrated_engine, ConsentRecord, user_id=user_id) == 0
 
 
-def test_user_account_survives_deletion(
+def test_user_account_is_deleted(
     client: TestClient,
     migrated_engine: Engine,
 ) -> None:
@@ -280,11 +341,17 @@ def test_user_account_survives_deletion(
 
     assert delete_account_data(client, headers).status_code == 200
 
-    # 같은 토큰이 그대로 통해야 한다 — 삭제는 로그아웃도 탈퇴도 아니다.
+    # 기존 토큰은 더 이상 통하지 않는다 -- 계정이 실제로 지워졌다는 증거.
     me = client.get(USER_PATH, headers=headers)
-    assert me.status_code == 200, me.text
-    assert me.json()["id"] == user_id
-    assert me.json()["email"] == "account-deletion-account@example.com"
+    assert me.status_code == 401, me.text
+    assert not user_exists(migrated_engine, user_id=user_id)
+
+    # 같은 이메일로 새로 가입할 수 있어야 한다 (계정이 정말 비어있다는 증거).
+    resignup = client.post(
+        "/auth/signup",
+        json={"email": "account-deletion-account@example.com", "password": PASSWORD},
+    )
+    assert resignup.status_code == 201, resignup.text
 
 
 def test_wrong_password_deletes_nothing(
@@ -307,6 +374,7 @@ def test_wrong_password_deletes_nothing(
     assert response.json() == {"detail": "현재 비밀번호가 일치하지 않습니다"}
     # 인증 검사가 삭제보다 먼저 일어났다는 증거.
     assert row_counts(migrated_engine, user_id=user_id) == FULL_SEED_COUNTS
+    assert user_exists(migrated_engine, user_id=user_id)
 
 
 def test_deletion_is_scoped_to_the_requesting_user(
@@ -327,6 +395,7 @@ def test_deletion_is_scoped_to_the_requesting_user(
     assert delete_account_data(client, headers).status_code == 200
 
     assert row_counts(migrated_engine, user_id=other_user_id) == FULL_SEED_COUNTS
+    assert user_exists(migrated_engine, user_id=other_user_id)
 
 
 def test_requires_authentication(client: TestClient) -> None:
@@ -350,4 +419,6 @@ def test_empty_account_returns_zero_counts(client: TestClient) -> None:
         "baselines_deleted": 0,
         "emotion_analyses_deleted": 0,
         "daily_records_deleted": 0,
+        "consent_records_deleted": 0,
+        "assessment_anchors_deleted": 0,
     }

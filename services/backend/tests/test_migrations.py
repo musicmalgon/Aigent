@@ -17,6 +17,10 @@ EXPECTED_USER_COLUMNS = {
     "name",
     "user_type",
     "created_at",
+    "google_sub",
+    "google_access_token",
+    "google_refresh_token",
+    "google_token_expiry",
 }
 EXPECTED_USER_TYPE_NAMES = {
     "UNIVERSITY_STUDENT",

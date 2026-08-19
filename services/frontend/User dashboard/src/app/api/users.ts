@@ -32,8 +32,13 @@ export async function updateUserPassword(
 }
 
 export interface AccountDataDeletionSummary {
-  // TODO: schemas/user.py의 AccountDataDeletionSummaryRead 확인되면 정확한 필드로 교체
-  [key: string]: unknown;
+  recovery_reports_deleted: number;
+  risk_evaluations_deleted: number;
+  baselines_deleted: number;
+  emotion_analyses_deleted: number;
+  daily_records_deleted: number;
+  consent_records_deleted: number;
+  assessment_anchors_deleted: number;
 }
 
 // 되돌릴 수 없는 삭제 — 비밀번호 재확인 필요

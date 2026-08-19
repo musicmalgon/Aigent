@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, ApiError } from "./client";
 
 // packages/contracts/schemas/behavioral_daily_record.schema.json 기준
 export const NULLABLE_METRIC_KEYS = [
@@ -89,10 +89,18 @@ export async function updateBehavioralRecord(
   });
 }
 
+// 그 날짜에 기록이 없으면 백엔드가 404를 정상 응답으로 준다 -- 에러가
+// 아니라 "없음"이므로 null로 돌려서 화면(OverlayContent)이 이미 갖고
+// 있는 "이 날짜의 기록을 찾을 수 없어요" 안내로 자연스럽게 이어지게 한다.
 export async function getBehavioralRecordByDate(
   recordDate: string
-): Promise<BehavioralRecordRead> {
-  return apiFetch<BehavioralRecordRead>(`/api/v1/behavioral-records/${recordDate}`);
+): Promise<BehavioralRecordRead | null> {
+  try {
+    return await apiFetch<BehavioralRecordRead>(`/api/v1/behavioral-records/${recordDate}`);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
 }
 
 // 범위 없이 호출하면 최근 14일(UTC), 범위 지정 시 최대 28일까지, 최신순 정렬로 옴

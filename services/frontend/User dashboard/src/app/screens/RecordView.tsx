@@ -67,16 +67,20 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
       try {
         const record = await getBehavioralRecordByDate(todayDateString());
         if (cancelled) return;
-        setExistingRecord(record);
-        setMinuteValues({
-          sleep_minutes: record.sleep_minutes,
-          rest_minutes: record.rest_minutes,
-          work_or_study_minutes: record.work_or_study_minutes,
-          exercise_minutes: record.exercise_minutes,
-        });
-        setAlreadyRecordedToday(true);
+        // record가 null이면 오늘 기록이 아직 없는 정상적인 경우 (getBehavioralRecordByDate가
+        // 404를 에러로 던지지 않고 null로 돌려줌 -- #137)
+        if (record) {
+          setExistingRecord(record);
+          setMinuteValues({
+            sleep_minutes: record.sleep_minutes,
+            rest_minutes: record.rest_minutes,
+            work_or_study_minutes: record.work_or_study_minutes,
+            exercise_minutes: record.exercise_minutes,
+          });
+          setAlreadyRecordedToday(true);
+        }
       } catch {
-        // 오늘 기록이 아직 없는 정상적인 경우 (404)
+        // 진짜 조회 실패(네트워크/서버 오류 등) -- 오늘 기록 없이 진행
       } finally {
         if (!cancelled) setLoading(false);
       }

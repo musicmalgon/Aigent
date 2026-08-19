@@ -119,6 +119,18 @@ export default function App() {
     setOverlay("record");
   };
 
+  // 마이페이지 > 동의내역 목록에서 "자세히"를 누르면 상세로, 상세에서
+  // "← 동의내역으로"를 누르면 다시 목록으로 -- OverlayContent가 같은
+  // 콜백으로 양방향 전환을 요청하므로 특수 문자열로 방향을 구분한다.
+  const openConsentDetail = (item: string) => {
+    if (item === "__back_to_history__") {
+      setOverlay("consent-history");
+      return;
+    }
+    setSelectedConsentItem(item);
+    setOverlay("consent-detail");
+  };
+
   const view: Record<AppScreen, ReactNode> = {
     welcome: <Welcome go={go} />,
     signup: <Auth mode="signup" go={go} openOverlay={() => setOverlay("forgot")} />,
@@ -141,7 +153,7 @@ export default function App() {
       <>
         {view[screen]}
         <Overlay open={overlay !== null} onClose={() => setOverlay(null)} title={overlay === "forgot" ? "비밀번호 찾기" : overlay === "consent-detail" ? "동의 내용" : ""}>
-          <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} selectedConsentItem={selectedConsentItem} onUserNameChange={setUserName} />
+          <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} selectedConsentItem={selectedConsentItem} onUserNameChange={setUserName} onOpenConsentDetail={openConsentDetail} />
         </Overlay>
       </>
     );
@@ -211,7 +223,7 @@ export default function App() {
           ))}
       </nav>
       <Overlay open={overlay !== null} onClose={() => setOverlay(null)} title={overlay ? overlayTitle[overlay] : ""}>
-        <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} selectedConsentItem={selectedConsentItem} onUserNameChange={setUserName} />
+        <OverlayContent kind={overlay} close={() => setOverlay(null)} go={go} selectedDate={selectedRecordDate} selectedConsentItem={selectedConsentItem} onUserNameChange={setUserName} onOpenConsentDetail={openConsentDetail} />
       </Overlay>
     </div>
   );

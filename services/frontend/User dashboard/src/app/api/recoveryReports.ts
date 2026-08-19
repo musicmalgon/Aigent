@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, ApiError } from "./client";
 
 export type RiskLevel = "low" | "moderate" | "high" | "very_high";
 export type DataQuality = "sufficient" | "insufficient";
@@ -106,8 +106,16 @@ export interface RecoveryReportResponse {
   created_at: string;
 }
 
-export async function getLatestRecoveryReport(): Promise<RecoveryReportResponse> {
-  return apiFetch<RecoveryReportResponse>("/api/v1/recovery-reports/latest");
+// 아직 리포트가 생성되기 전(기록이 부족한 경우 등)이면 백엔드가 404를 정상
+// 응답으로 준다 -- 에러가 아니라 "없음"이므로 null로 돌려서 화면(ReportView)이
+// 이미 갖고 있는 "아직 생성된 리포트가 없어요" 안내로 자연스럽게 이어지게 한다.
+export async function getLatestRecoveryReport(): Promise<RecoveryReportResponse | null> {
+  try {
+    return await apiFetch<RecoveryReportResponse>("/api/v1/recovery-reports/latest");
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
 }
 
 export async function getRecoveryReportHistory(params?: {

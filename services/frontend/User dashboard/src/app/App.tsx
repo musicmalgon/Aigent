@@ -6,6 +6,7 @@ import { nav, type AppScreen, type OnboardMode, type OverlayKind } from "./types
 import { getCurrentUser } from "./api/users";
 import { getAccessToken, setAccessToken } from "./api/client";
 import { logout } from "./api/auth";
+import type { DimensionScores } from "./api/assessments";
 
 import { Welcome } from "../app/screens/Welcome";
 import { Auth } from "../app/screens/Auth";
@@ -36,6 +37,9 @@ export default function App() {
   const [selectedRecordDate, setSelectedRecordDate] = useState<string>(todayDateString());
   // "이용약관", "개인정보 수집" 등 어떤 동의 항목의 "자세히"를 눌렀는지 기억해둠
   const [selectedConsentItem, setSelectedConsentItem] = useState<string | null>(null);
+  // 온보딩 설문(Survey)이 계산한 차원 점수 -- go()가 payload를 못 받으므로
+  // selectedRecordDate와 같은 방식으로 여기서 들고 있다가 결과 화면에 내려준다.
+  const [onboardingDimensions, setOnboardingDimensions] = useState<DimensionScores | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   // localStorage에 남은 토큰으로 세션을 복구하는 중인지. 이게 끝나기 전에
   // 화면을 그리면 로그인된 사용자한테도 잠깐 welcome이 보였다가 home으로
@@ -138,8 +142,8 @@ export default function App() {
     consent: <Consent go={go} openDetail={(item: string) => { setSelectedConsentItem(item); setOverlay("consent-detail"); }} />,
     mode: <Mode go={go} setMode={setOnboardMode} />,
     burnout: <BurnoutFlow go={go} mode={onboardMode} />,
-    survey: <Survey go={go} mode={onboardMode} />,
-    result: <SurveyResult go={go} />,
+    survey: <Survey go={go} mode={onboardMode} onComplete={setOnboardingDimensions} />,
+    result: <SurveyResult go={go} dimensions={onboardingDimensions} />,
     home: <HomeView go={go} openRecord={() => openRecordOverlay()} />,
     record: <RecordView go={go} />,
     past: <PastView go={go} openRecord={date => openRecordOverlay(date)} />,

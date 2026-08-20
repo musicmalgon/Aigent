@@ -5,8 +5,16 @@ from pydantic import BaseModel, Field, field_validator
 from app.models.assessment import AssessmentType, InterpretationScope
 from app.models.user import UserType
 
+# 앞 4개는 온보딩 초기 상태 설문(CUSTOM_INITIAL_STATE_SURVEY)용,
+# 뒤 3개는 K-BAT 하위영역용. exhaustion(탈진)은 두 검사가 같은 뜻으로 쓰므로 공유한다.
 DimensionKey = Literal[
-    "exhaustion", "academic_burden", "occupational_burden", "recovery_difficulty"
+    "exhaustion",
+    "academic_burden",
+    "occupational_burden",
+    "recovery_difficulty",
+    "mental_distance",
+    "cognitive_control",
+    "emotional_control",
 ]
 
 

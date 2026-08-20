@@ -21,6 +21,7 @@ EXPECTED_TABLES = {
     "behavioral_baselines",
     "burnout_risk_evaluations",
     "recovery_reports",
+    "recovery_plan_items",
     "alembic_version",
 }
 

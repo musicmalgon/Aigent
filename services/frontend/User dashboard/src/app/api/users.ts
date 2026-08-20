@@ -32,6 +32,7 @@ export async function updateUserPassword(
 }
 
 export interface AccountDataDeletionSummary {
+  recovery_plan_items_deleted: number;
   recovery_reports_deleted: number;
   risk_evaluations_deleted: number;
   baselines_deleted: number;

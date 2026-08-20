@@ -289,6 +289,7 @@ def test_deletes_every_derived_table_and_reports_counts(
 
     assert response.status_code == 200, response.text
     assert response.json() == {
+        "recovery_plan_items_deleted": 0,
         "recovery_reports_deleted": 1,
         "risk_evaluations_deleted": 1,
         "baselines_deleted": 1,
@@ -414,6 +415,7 @@ def test_empty_account_returns_zero_counts(client: TestClient) -> None:
 
     assert response.status_code == 200, response.text
     assert response.json() == {
+        "recovery_plan_items_deleted": 0,
         "recovery_reports_deleted": 0,
         "risk_evaluations_deleted": 0,
         "baselines_deleted": 0,

@@ -20,6 +20,7 @@ from app.api import (
     dashboard,
     emotion_analyses,
     recovery_reports,
+    recovery_plans,
     risk_evaluations,
     users,
 )
@@ -118,6 +119,7 @@ def create_app(
     application.include_router(baselines.router)
     application.include_router(risk_evaluations.router)
     application.include_router(recovery_reports.router)
+    application.include_router(recovery_plans.router)
     application.include_router(consents.router)
     application.include_router(dashboard.router)
     application.include_router(assessments.router, tags=["assessments"])

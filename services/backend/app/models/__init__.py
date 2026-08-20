@@ -7,6 +7,7 @@ from app.models.persistence import (
     DailyRecordSource,
     EmotionAnalysisResult,
     PersistenceBaselineStatus,
+    RecoveryPlanItem,
     RecoveryReport,
 )
 from app.models.user import User, UserType
@@ -25,6 +26,7 @@ __all__ = [
     "EmotionAnalysisResult",
     "PersistenceBaselineStatus",
     "RecoveryReport",
+    "RecoveryPlanItem",
     "User",
     "UserType",
 ]

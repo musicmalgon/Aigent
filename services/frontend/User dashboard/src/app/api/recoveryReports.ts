@@ -135,3 +135,12 @@ export async function getRecoveryReportHistory(params?: {
     `/api/v1/recovery-reports${query ? `?${query}` : ""}`
   );
 }
+
+export async function createRecoveryReport(
+  riskEvaluationId: string,
+): Promise<RecoveryReportResponse> {
+  return apiFetch<RecoveryReportResponse>("/api/v1/recovery-reports", {
+    method: "POST",
+    body: JSON.stringify({ risk_evaluation_id: riskEvaluationId }),
+  });
+}

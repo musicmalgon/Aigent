@@ -15,6 +15,11 @@
 > Six-class training, dry-run, and artifact packaging are documented in
 > [`docs/transformer_coarse_baseline_guide.md`](docs/transformer_coarse_baseline_guide.md).
 
+> Stage 2의 독립 6개 멀티라벨 신호 학습 결과를 실사용 API에 연결하는 방법과
+> 위험점수 비연계 원칙은
+> [`docs/stage2_burnout_signal_integration.md`](docs/stage2_burnout_signal_integration.md)를
+> 따른다.
+
 Re:Mind AI 파트는 초기 자가 보고 결과를 고정 기준점으로 보관하면서 개인별
 생활 변화와 감정 일기 분석 결과를 결합할 수 있는 데이터 계약과 분석
 인터페이스를 담당합니다. 이 모듈은 의료적 판단이나 진단을 제공하지 않습니다.

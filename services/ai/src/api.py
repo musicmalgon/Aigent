@@ -10,6 +10,8 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from .emotion import (
+    BurnoutSignalSettings,
+    BurnoutSignalTransformerAnalyzer,
     CoarseEmotionSettings,
     CoarseTransformerEmotionAnalyzer,
     NeutralGateAnalyzer,
@@ -27,7 +29,11 @@ from .report_schemas import (
     RecoveryReportGenerationRequest,
     RecoveryReportGenerationResponse,
 )
-from .schemas import CoarseEmotionInput, RemindCoarseEmotionInferenceResponse
+from .schemas import (
+    BurnoutSignalInferenceResponse,
+    CoarseEmotionInput,
+    RemindCoarseEmotionInferenceResponse,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -55,11 +61,22 @@ class RecoveryReportService(Protocol):
     async def aclose(self) -> None: ...
 
 
+class BurnoutSignalService(Protocol):
+    @property
+    def is_loaded(self) -> bool: ...
+
+    def load(self) -> None: ...
+
+    def predict(self, request: CoarseEmotionInput) -> BurnoutSignalInferenceResponse: ...
+
+
 def create_app(
     *,
     analyzer: CoarseEmotionService | None = None,
     settings: CoarseEmotionSettings | None = None,
     neutral_gate_settings: NeutralGateSettings | None = None,
+    burnout_analyzer: BurnoutSignalService | None = None,
+    burnout_settings: BurnoutSignalSettings | None = None,
     report_generator: RecoveryReportService | None = None,
 ) -> FastAPI:
     """Create an app whose liveness is independent from model readiness."""
@@ -90,10 +107,16 @@ def create_app(
         GeminiReportSettings.from_env()
     )
     owns_generator = report_generator is None
+    signal_settings = burnout_settings or BurnoutSignalSettings.from_env()
+    signal_service = burnout_analyzer
+    signal_enabled = signal_service is not None or signal_settings.enabled
+    if signal_service is None and signal_enabled:
+        signal_service = BurnoutSignalTransformerAnalyzer(signal_settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
         app.state.model_startup_error = None
+        app.state.burnout_signal_startup_error = None
         if not service.is_loaded:
             try:
                 service.load()
@@ -101,6 +124,15 @@ def create_app(
                 app.state.model_startup_error = type(exc).__name__
                 LOGGER.warning(
                     "coarse emotion model is not ready at startup: %s",
+                    type(exc).__name__,
+                )
+        if signal_service is not None and not signal_service.is_loaded:
+            try:
+                signal_service.load()
+            except ModelNotReadyError as exc:
+                app.state.burnout_signal_startup_error = type(exc).__name__
+                LOGGER.warning(
+                    "burnout signal model is not ready at startup: %s",
                     type(exc).__name__,
                 )
         try:
@@ -119,6 +151,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.coarse_emotion_analyzer = service
+    app.state.burnout_signal_analyzer = signal_service
     app.state.recovery_report_generator = generator
 
     @app.get("/health/live", tags=["health"])
@@ -162,6 +195,33 @@ def create_app(
             ) from exc
 
     @app.post(
+        "/v1/burnout-signals/analyze",
+        response_model=BurnoutSignalInferenceResponse,
+        tags=["burnout-signals"],
+        summary="Analyze six independent non-diagnostic pattern signals",
+    )
+    def analyze_burnout_signals(
+        request: CoarseEmotionInput,
+    ) -> BurnoutSignalInferenceResponse:
+        if signal_service is None or not signal_service.is_loaded:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="burnout signal model is not ready",
+            )
+        try:
+            return signal_service.predict(request)
+        except ModelNotReadyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="burnout signal model is not ready",
+            ) from exc
+        except PredictionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="burnout signal inference failed",
+            ) from exc
+
+    @app.post(
         "/v1/recovery-reports/generate",
         response_model=RecoveryReportGenerationResponse,
         tags=["recovery-reports"],
@@ -191,4 +251,9 @@ def create_app(
     return app
 
 
-__all__ = ["CoarseEmotionService", "RecoveryReportService", "create_app"]
+__all__ = [
+    "BurnoutSignalService",
+    "CoarseEmotionService",
+    "RecoveryReportService",
+    "create_app",
+]

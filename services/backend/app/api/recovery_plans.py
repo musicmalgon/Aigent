@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.domain.recovery.models import RecoveryActionId
+from app.domain.recovery.catalog import select_default_recovery_actions
+from app.domain.recovery.models import RecoveryAction, RecoveryActionId
 from app.models.persistence import RecoveryPlanItem
 from app.models.user import User
 from app.repositories.recovery_plan_items import (
@@ -17,7 +18,10 @@ from app.repositories.recovery_plan_items import (
     list_recovery_plan_items,
     update_recovery_plan_item_status,
 )
-from app.repositories.recovery_reports import get_recovery_report
+from app.repositories.recovery_reports import (
+    get_latest_recovery_report,
+    get_recovery_report,
+)
 from app.schemas.recovery_plan import (
     RecoveryPlanItemCreate,
     RecoveryPlanItemResponse,
@@ -42,6 +46,21 @@ def read_recovery_plan(
     return [
         _map(item)
         for item in list_recovery_plan_items(db, user_id=current_user.id)
+    ]
+
+
+@router.get("/recommendations", response_model=list[RecoveryAction])
+def read_recovery_recommendations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[RecoveryAction]:
+    """Return usable suggestions even before a first report exists."""
+    report = get_latest_recovery_report(db, user_id=current_user.id)
+    if report is None:
+        return select_default_recovery_actions()
+    return [
+        RecoveryAction.model_validate(action)
+        for action in report.selected_actions
     ]
 
 

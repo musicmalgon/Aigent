@@ -16,8 +16,19 @@ export interface RecoveryPlanItem {
   completed_at: string | null;
 }
 
+export interface RecoveryRecommendation {
+  id: string;
+  title: string;
+  duration_minutes: number | null;
+  difficulty: RecoveryDifficulty;
+}
+
 export async function getRecoveryPlan(): Promise<RecoveryPlanItem[]> {
   return apiFetch<RecoveryPlanItem[]>("/api/v1/recovery-plans");
+}
+
+export async function getRecoveryRecommendations(): Promise<RecoveryRecommendation[]> {
+  return apiFetch<RecoveryRecommendation[]>("/api/v1/recovery-plans/recommendations");
 }
 
 export async function addRecoveryPlanItem(

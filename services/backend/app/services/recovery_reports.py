@@ -10,8 +10,17 @@ from typing import Any
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.clients.ai import AIServiceClient, AIServiceError
-from app.domain.recovery.catalog import select_recovery_actions
+from app.clients.ai import (
+    AIServiceClient,
+    AIServiceError,
+    RecoveryActionSelectionRequest,
+)
+from app.domain.recovery.catalog import (
+    actions_from_candidate_ids,
+    recovery_candidate_pool,
+    select_default_recovery_actions,
+    select_recovery_actions,
+)
 from app.domain.recovery.models import (
     RecoveryActionId,
     RecoveryChangedItem,
@@ -140,6 +149,18 @@ _ACTION_REASON = {
     ),
     RecoveryActionId.ROUTINE_CHECK_5: (
         "현재 생활 리듬을 가볍게 점검하고 유지하기 위한 제안입니다."
+    ),
+    RecoveryActionId.BREATHING_5: (
+        "호흡을 느리게 정리하며 긴장을 낮추기 위한 제안입니다."
+    ),
+    RecoveryActionId.TALK_TO_SOMEONE: (
+        "가까운 사람과 연결감을 회복하기 위한 제안입니다."
+    ),
+    RecoveryActionId.SMALL_SUCCESS_TASK: (
+        "작은 완료 경험으로 다시 시작하기 위한 제안입니다."
+    ),
+    RecoveryActionId.STEP_AWAY_5: (
+        "하던 일에서 잠시 물리적으로 떨어져 과부하를 낮추기 위한 제안입니다."
     ),
 }
 
@@ -395,6 +416,10 @@ def _source_snapshot(
                 "updated_at": record.updated_at,
             }
         )
+    request_payload = request.model_dump(mode="json")
+    # Recommendations may be selected by a separate constrained LLM call;
+    # source consistency is about records/baseline/risk inputs, not that choice.
+    request_payload.pop("selected_actions", None)
     return _snapshot(
         {
             "risk_evaluation": {
@@ -432,7 +457,7 @@ def _source_snapshot(
                 "created_at": baseline.created_at,
             },
             "daily_records": daily_snapshots,
-            "request": request.model_dump(mode="json"),
+            "request": request_payload,
         }
     )
 
@@ -662,6 +687,9 @@ def store_prepared_recovery_report(
         risk_evaluation_id=prepared.risk_evaluation_id,
         for_update=True,
     )
+    reloaded_request = reloaded_request.model_copy(
+        update={"selected_actions": prepared.request.selected_actions}
+    )
     if (
         reloaded_request != prepared.request
         or input_snapshot != prepared.input_snapshot
@@ -681,6 +709,51 @@ def store_prepared_recovery_report(
     )
 
 
+async def select_recovery_actions_for_report(
+    prepared: PreparedRecoveryReport,
+    *,
+    ai_client: AIServiceClient,
+) -> PreparedRecoveryReport:
+    """Select up to three fixed candidates, always falling back safely."""
+    request = prepared.request
+    fallback = select_recovery_actions(
+        [change.factor_code for change in request.changes],
+        stage2_signals=request.stage2_signal_drivers,
+    )
+    # A provisional/insufficient report is the new-user path: deterministic
+    # defaults avoid an unnecessary LLM call and work with sparse data.
+    if request.is_provisional or request.data_quality == "insufficient":
+        selected = select_default_recovery_actions()
+    else:
+        try:
+            response = await ai_client.select_recovery_actions(
+                RecoveryActionSelectionRequest(
+                    candidates=recovery_candidate_pool(),
+                    stage2_signals=request.stage2_signal_drivers,
+                    factor_codes=[
+                        change.factor_code.value for change in request.changes
+                    ],
+                    risk_level=request.risk_level,
+                    risk_score=request.risk_score,
+                    data_quality=request.data_quality,
+                    is_provisional=request.is_provisional,
+                )
+            )
+            selected = actions_from_candidate_ids(response.ids)
+        except Exception:
+            LOGGER.warning(
+                "Recovery action selection fell back to defaults",
+                exc_info=True,
+            )
+            selected = fallback
+    return PreparedRecoveryReport(
+        user_id=prepared.user_id,
+        risk_evaluation_id=prepared.risk_evaluation_id,
+        request=request.model_copy(update={"selected_actions": selected}),
+        input_snapshot=prepared.input_snapshot,
+    )
+
+
 __all__ = [
     "REPORT_DISCLAIMER",
     "PreparedRecoveryReport",
@@ -689,6 +762,7 @@ __all__ = [
     "RiskEvaluationNotFoundError",
     "build_template_fallback",
     "generate_recovery_report_copy",
+    "select_recovery_actions_for_report",
     "prepare_recovery_report",
     "store_prepared_recovery_report",
 ]

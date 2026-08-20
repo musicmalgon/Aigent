@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.services.baselines import MINIMUM_SAMPLE_DAYS
@@ -159,9 +160,13 @@ def test_kbat_result_boundary_classification_matches_the_spec_table(
         assert body["result"]["total_average"] == value
 
 
-def test_kbat_result_ignores_pre_v2_kbat_anchors(client: TestClient) -> None:
-    """예전 채점 방식(0~1 소진 강도 반전 환산)으로 저장된 K-BAT 응답은
-    새 결과 계산에 섞이지 않아야 한다 -- 기존 사용자 데이터 호환성."""
+def test_kbat_result_converts_pre_v2_kbat_anchors_instead_of_hiding_them(
+    client: TestClient,
+) -> None:
+    """예전 채점 방식(리커트 0~4를 0~1 소진 강도로 반전 환산)으로 이미 설문을
+    끝낸 사용자에게 '설문을 안 했다'고 보이면 안 된다 -- 새 척도(1~5)로
+    환산해서 그대로 결과를 보여줘야 한다. 두 척도 모두 값이 클수록 증상에
+    더 동의한다는 방향은 같으므로 [0,1] -> [1,5] 선형 확장이면 충분하다."""
     headers, _ = authenticated_user(client, email="kbat-legacy@example.com")
     legacy = client.post(
         ANCHOR_PATH,
@@ -171,10 +176,10 @@ def test_kbat_result_ignores_pre_v2_kbat_anchors(client: TestClient) -> None:
             "target_group": "university_student",
             "completed_at": COMPLETED_AT,
             "dimensions": {
-                "exhaustion": 0.75,
-                "mental_distance": 0.5,
-                "cognitive_control": 0.25,
-                "emotional_control": 0.5,
+                "exhaustion": 1.0,
+                "mental_distance": 0.0,
+                "cognitive_control": 0.5,
+                "emotional_control": 0.75,
             },
             "source": "onboarding_kbat_v1",
         },
@@ -185,7 +190,51 @@ def test_kbat_result_ignores_pre_v2_kbat_anchors(client: TestClient) -> None:
     response = client.get(KBAT_RESULT_PATH, headers=headers)
 
     assert response.status_code == 200, response.text
-    assert response.json()["state"] == "not_taken"
+    body = response.json()
+    assert body["state"] == "ready"
+    assert body["result"]["exhaustion_average"] == pytest.approx(5.0)
+    assert body["result"]["mental_distance_average"] == pytest.approx(1.0)
+    assert body["result"]["cognitive_control_average"] == pytest.approx(3.0)
+    assert body["result"]["emotional_control_average"] == pytest.approx(4.0)
+
+
+def test_kbat_result_prefers_v2_anchor_over_an_older_legacy_one(
+    client: TestClient,
+) -> None:
+    """v1로 먼저 응답했다가 나중에 v2로 다시 설문을 완료했다면, 변환된
+    구버전이 아니라 실제 v2 응답을 써야 한다."""
+    headers, _ = authenticated_user(client, email="kbat-legacy-then-v2@example.com")
+    legacy = client.post(
+        ANCHOR_PATH,
+        headers=headers,
+        json={
+            "assessment_type": "k_bat",
+            "target_group": "university_student",
+            "completed_at": "2026-01-01T09:00:00+09:00",
+            "dimensions": {
+                "exhaustion": 1.0,
+                "mental_distance": 1.0,
+                "cognitive_control": 1.0,
+                "emotional_control": 1.0,
+            },
+            "source": "onboarding_kbat_v1",
+        },
+    )
+    assert legacy.status_code == 201, legacy.text
+    submit_kbat_survey(
+        client,
+        headers,
+        exhaustion=2.0,
+        mental_distance=2.0,
+        cognitive_control=2.0,
+        emotional_control=2.0,
+    )
+    seed_daily_records(client, headers, days=MINIMUM_SAMPLE_DAYS)
+
+    body = client.get(KBAT_RESULT_PATH, headers=headers).json()
+
+    assert body["state"] == "ready"
+    assert body["result"]["total_average"] == pytest.approx(2.0)
 
 
 def test_kbat_result_requires_authentication(client: TestClient) -> None:

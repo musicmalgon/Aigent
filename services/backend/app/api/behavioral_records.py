@@ -7,9 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, require_consent
+from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.models.consent import ConsentType
 from app.models.persistence import BehavioralDailyRecord
 from app.models.user import User
 from app.repositories import PersistenceConflictError
@@ -38,6 +37,15 @@ router = APIRouter(
     prefix="/api/v1/behavioral-records",
     tags=["behavioral-records"],
 )
+
+# health_data 동의("건강·생활 데이터 활용 동의")는 그 문구가 말하듯 "저장된
+# 데이터를 분석에 활용"하는 것에 대한 동의다 -- 수면·휴식·공부·운동 시간을
+# 직접 입력/수정하는 것 자체를 막을 이유가 아니다. 예전엔 이 엔드포인트가
+# require_consent(HEALTH_DATA)로 막혀 있어서, 동의를 안 했거나 철회한
+# 사용자는 자기가 방금 손으로 입력한 값조차 저장할 수 없었다(Samsung
+# Health 연동 여부와 무관하게). Samsung Health 자동 동기화는 모바일 앱이
+# Android Health Connect 권한(OS 수준 동의)을 이미 별도로 거치므로, 여기서
+# 한 번 더 서버 측 동의를 강제할 필요가 없다.
 
 
 def _today_in_timezone(timezone_name: str) -> date:
@@ -116,7 +124,7 @@ def _resolve_date_range(
 )
 def create_behavioral_record(
     payload: DailyRecordCreate,
-    current_user: User = Depends(require_consent(ConsentType.HEALTH_DATA)),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DailyRecordRead:
     if payload.date > _today_in_timezone(payload.time_zone):
@@ -190,7 +198,7 @@ def read_behavioral_record(
 def update_behavioral_record(
     record_date: date,
     payload: DailyRecordCreate,
-    current_user: User = Depends(require_consent(ConsentType.HEALTH_DATA)),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DailyRecordRead:
     if payload.date != record_date:

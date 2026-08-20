@@ -73,8 +73,10 @@ def authenticated_user(
     *,
     email: str = "daily-record@example.com",
 ) -> tuple[dict[str, str], dict[str, object]]:
-    # 쓰기 엔드포인트가 health_data 동의를 요구하므로 이 헬퍼는 동의까지 마친
-    # 사용자를 돌려준다. 미동의 상태가 필요한 테스트는 위 _without_consent를 쓴다.
+    # 생활 기록 쓰기 자체는 더 이상 health_data 동의를 요구하지 않지만(직접
+    # 입력과 "활용" 동의는 별개), 이 헬퍼는 그래도 동의까지 마친 사용자를
+    # 돌려준다 -- 동의 상태가 기록 저장에 영향을 주지 않는다는 걸 이
+    # 파일의 test_*_without_consent 계열 테스트들이 명시적으로 검증한다.
     headers, user = authenticated_user_without_consent(client, email=email)
     grant_health_data_consent(client, headers)
     return headers, user
@@ -819,7 +821,10 @@ def test_openapi_declares_authenticated_daily_record_contract(
     assert response_schema["type"] == "array"
 
 
-def test_create_without_consent_is_forbidden(client: TestClient) -> None:
+def test_create_without_health_data_consent_succeeds(client: TestClient) -> None:
+    # health_data("건강·생활 데이터 활용 동의")는 저장된 데이터를 분석에
+    # 쓰는 것에 대한 동의이지, 직접 입력을 막는 전제조건이 아니다. 동의
+    # 없이도(=Samsung Health 연동 없이도) 손으로 남기는 기록은 저장돼야 한다.
     headers, _ = authenticated_user_without_consent(
         client,
         email="no-consent-create@example.com",
@@ -831,11 +836,10 @@ def test_create_without_consent_is_forbidden(client: TestClient) -> None:
         json=canonical_daily_record_payload(),
     )
 
-    assert response.status_code == 403
-    assert response.json() == {"detail": "health_data 동의가 필요합니다"}
+    assert response.status_code == 201, response.text
 
 
-def test_create_after_consent_withdrawn_is_forbidden(client: TestClient) -> None:
+def test_create_after_consent_withdrawn_still_succeeds(client: TestClient) -> None:
     headers, _ = authenticated_user(client, email="withdrawn-create@example.com")
     withdraw_health_data_consent(client, headers)
 
@@ -845,11 +849,10 @@ def test_create_after_consent_withdrawn_is_forbidden(client: TestClient) -> None
         json=canonical_daily_record_payload(),
     )
 
-    assert response.status_code == 403
-    assert response.json() == {"detail": "health_data 동의가 필요합니다"}
+    assert response.status_code == 201, response.text
 
 
-def test_update_without_consent_is_forbidden(client: TestClient) -> None:
+def test_update_without_consent_still_succeeds(client: TestClient) -> None:
     headers, _ = authenticated_user(client, email="withdrawn-update@example.com")
     create_record(client, headers, "2026-07-20")
     withdraw_health_data_consent(client, headers)
@@ -860,8 +863,8 @@ def test_update_without_consent_is_forbidden(client: TestClient) -> None:
         json=canonical_daily_record_payload(record_date="2026-07-20", steps=1234),
     )
 
-    assert response.status_code == 403
-    assert response.json() == {"detail": "health_data 동의가 필요합니다"}
+    assert response.status_code == 200, response.text
+    assert response.json()["steps"] == 1234
 
 
 def test_read_and_delete_work_without_consent(client: TestClient) -> None:

@@ -666,6 +666,49 @@ class RecoveryPlanItem(Base):
     source_report: Mapped[RecoveryReport | None] = relationship()
 
 
+class RecoveryPlanSettings(Base):
+    """유저 1명당 1행 -- 회복 계획 화면의 알림시간/목표 기간(PlanView.tsx).
+
+    이전에는 화면에 하드코딩된 문구였을 뿐 실제로 저장되는 곳이 없었다.
+    """
+
+    __tablename__ = "recovery_plan_settings"
+    __table_args__ = (
+        CheckConstraint(
+            "target_period_start IS NULL OR target_period_end IS NULL OR "
+            "target_period_start <= target_period_end",
+            name="ck_recovery_plan_settings_period_order",
+        ),
+        Index(
+            "ix_recovery_plan_settings_user_id",
+            "user_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    notification_time: Mapped[time | None] = mapped_column(Time(timezone=False))
+    target_period_start: Mapped[date | None] = mapped_column(Date)
+    target_period_end: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        default=_utc_now,
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        default=_utc_now,
+        onupdate=_utc_now,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 __all__ = [
     "BehavioralBaseline",
     "BehavioralDailyRecord",
@@ -675,4 +718,5 @@ __all__ = [
     "PersistenceBaselineStatus",
     "RecoveryReport",
     "RecoveryPlanItem",
+    "RecoveryPlanSettings",
 ]

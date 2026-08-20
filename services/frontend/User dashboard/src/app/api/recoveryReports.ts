@@ -86,6 +86,7 @@ export interface RecoveryReportFacts {
   data_quality: DataQuality;
   period: RecoveryReportPeriod;
   changes: RecoveryReportChange[]; // 최대 3개
+  stage2_signal_drivers: string[];
 }
 
 export interface RecoveryReportResponse {

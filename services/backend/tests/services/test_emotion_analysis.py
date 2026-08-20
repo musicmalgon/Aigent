@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from app.clients.ai import (
     AIServiceClient,
     AIServiceConnectionError,
+    BurnoutSignalResponse,
+    BurnoutSignalState,
     CoarseEmotionLabel,
     CoarseEmotionRequest,
     CoarseEmotionResponse,
@@ -83,6 +85,8 @@ class FakeAIClient:
         self.response = response
         self.error = error
         self.requests: list[CoarseEmotionRequest] = []
+        self.burnout_response: BurnoutSignalResponse | None = None
+        self.stage2_burnout_signals_enabled = False
 
     async def classify_emotion(
         self,
@@ -93,6 +97,13 @@ class FakeAIClient:
             raise self.error
         assert self.response is not None
         return self.response
+
+    async def analyze_burnout_signals(
+        self,
+        request: CoarseEmotionRequest,
+    ) -> BurnoutSignalResponse | None:
+        del request
+        return self.burnout_response
 
 
 def test_mapping_contains_only_persistence_fields() -> None:
@@ -192,6 +203,69 @@ def test_orchestration_forwards_normalized_request_and_user_id(
     assert payload.record_date == record_date
     assert payload.input_hash is None
     assert "private input" not in repr(payload)
+
+
+def test_orchestration_persists_structured_stage2_provenance(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = FakeAIClient(response=ai_response())
+    fake_client.stage2_burnout_signals_enabled = True
+    labels = {
+        "exhaustion": 0.9,
+        "overload": 0.1,
+        "helplessness": 0.1,
+        "low_efficacy": 0.1,
+        "anxiety": 0.1,
+        "irritability": 0.1,
+    }
+    fake_client.burnout_response = BurnoutSignalResponse(
+        taxonomy_version="stage2-burnout-signals-v1",
+        model_version="stage2-test",
+        threshold_version="stage2-test-thresholds",
+        probabilities=labels,
+        thresholds={label: 0.65 for label in labels},
+        signal_states={
+            label: (
+                BurnoutSignalState.PRESENT
+                if label == "exhaustion"
+                else BurnoutSignalState.UNVALIDATED
+            )
+            for label in labels
+        },
+        active_signals=["exhaustion"],
+        validated_signals=["exhaustion"],
+        deployment_status="partial",
+        informational_only=True,
+        risk_score_eligible=False,
+        latency_ms=1.0,
+    )
+    captured: dict[str, object] = {}
+
+    def capture_result(
+        session: Session,
+        *,
+        user_id: str,
+        payload: EmotionResultCreate,
+    ) -> EmotionAnalysisResult:
+        del session
+        captured.update(user_id=user_id, payload=payload)
+        return cast(EmotionAnalysisResult, object())
+
+    monkeypatch.setattr(emotion_results, "create_emotion_result", capture_result)
+    run(
+        analyze_and_stage_emotion_result(
+            db_session,
+            user_id="authenticated-user",
+            record_date=date(2026, 7, 20),
+            request=CoarseEmotionRequest(hs01="first", hs02="second"),
+            ai_client=cast(AIServiceClient, fake_client),
+        )
+    )
+
+    payload = cast(EmotionResultCreate, captured["payload"])
+    assert payload.burnout_signal_payload is not None
+    assert payload.burnout_signal_payload["active_signals"] == ["exhaustion"]
 
 
 def test_ai_failure_does_not_call_repository(

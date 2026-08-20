@@ -50,6 +50,16 @@
         "$ref": "#/$defs/action"
       }
     },
+    "stage2_signal_drivers": {
+      "type": "array",
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32
+      }
+    },
     "prompt_version": {
       "type": "string",
       "const": "recovery-report-prompt-v1"

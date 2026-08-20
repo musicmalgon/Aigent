@@ -82,6 +82,32 @@ _ACTION_IDS_BY_FACTOR = {
     ),
 }
 
+# Stage 2 labels are mapped to low-intensity actions only. They are
+# informational and never alter the burnout risk score.
+_ACTION_IDS_BY_STAGE2_SIGNAL = {
+    "exhaustion": (RecoveryActionId.REST_30, RecoveryActionId.SLEEP_EARLY_60),
+    "overload": (
+        RecoveryActionId.SCHEDULE_REDUCE_ONE,
+        RecoveryActionId.REST_30,
+    ),
+    "helplessness": (
+        RecoveryActionId.ROUTINE_CHECK_5,
+        RecoveryActionId.JOURNAL_CHECKIN_10,
+    ),
+    "low_efficacy": (
+        RecoveryActionId.ROUTINE_CHECK_5,
+        RecoveryActionId.SCHEDULE_REDUCE_ONE,
+    ),
+    "anxiety": (
+        RecoveryActionId.JOURNAL_CHECKIN_10,
+        RecoveryActionId.REST_30,
+    ),
+    "irritability": (
+        RecoveryActionId.REST_30,
+        RecoveryActionId.SCHEDULE_REDUCE_ONE,
+    ),
+}
+
 
 def get_recovery_action(action_id: RecoveryActionId) -> RecoveryAction:
     return _ACTIONS[action_id].model_copy(deep=True)
@@ -90,20 +116,34 @@ def get_recovery_action(action_id: RecoveryActionId) -> RecoveryAction:
 def select_recovery_actions(
     factor_codes: list[ReportFactorCode],
     *,
+    stage2_signals: list[str] | tuple[str, ...] = (),
     limit: int = 3,
 ) -> list[RecoveryAction]:
     if limit < 1 or limit > 3:
         raise ValueError("recovery action limit must be between one and three")
 
     selected: list[RecoveryActionId] = []
-    for factor_code in factor_codes:
-        for action_id in _ACTION_IDS_BY_FACTOR[factor_code]:
+    # Calibrated Stage 2 drivers take precedence, while behavioral factors
+    # fill any remaining slots. This makes the new signal path observable
+    # without allowing it to replace the existing risk engine.
+    for signal in stage2_signals:
+        for action_id in _ACTION_IDS_BY_STAGE2_SIGNAL.get(signal, ()):
             if action_id not in selected:
                 selected.append(action_id)
             if len(selected) == limit:
                 break
         if len(selected) == limit:
             break
+
+    if len(selected) < limit:
+        for factor_code in factor_codes:
+            for action_id in _ACTION_IDS_BY_FACTOR[factor_code]:
+                if action_id not in selected:
+                    selected.append(action_id)
+                if len(selected) == limit:
+                    break
+            if len(selected) == limit:
+                break
 
     if not selected:
         selected.append(RecoveryActionId.ROUTINE_CHECK_5)

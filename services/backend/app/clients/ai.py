@@ -445,6 +445,7 @@ class AIServiceClientConfig:
     write_timeout_seconds: float
     pool_timeout_seconds: float
     auth_token: SecretStr | None = None
+    stage2_burnout_signals_enabled: bool = False
 
     def __post_init__(self) -> None:
         timeout_values = {
@@ -484,6 +485,7 @@ class AIServiceClientConfig:
             write_timeout_seconds=settings.ai_service_write_timeout_seconds,
             pool_timeout_seconds=settings.ai_service_pool_timeout_seconds,
             auth_token=settings.ai_service_auth_token,
+            stage2_burnout_signals_enabled=settings.stage2_burnout_signals_enabled,
         )
 
     def to_httpx_timeout(self) -> httpx.Timeout:
@@ -518,6 +520,9 @@ class AIServiceClient:
         self._base_url = self._normalize_base_url(config.base_url)
         self._timeout = config.to_httpx_timeout()
         self._auth_token = config.auth_token
+        self._stage2_burnout_signals_enabled = (
+            config.stage2_burnout_signals_enabled
+        )
         self._owns_http_client = http_client is None
         self._http_client = http_client or httpx.AsyncClient(transport=transport)
         self._closed = False
@@ -557,6 +562,10 @@ class AIServiceClient:
     @property
     def is_closed(self) -> bool:
         return self._closed
+
+    @property
+    def stage2_burnout_signals_enabled(self) -> bool:
+        return self._stage2_burnout_signals_enabled
 
     async def aclose(self) -> None:
         if self._closed:

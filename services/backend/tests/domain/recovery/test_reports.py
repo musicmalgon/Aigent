@@ -77,6 +77,19 @@ def test_catalog_selection_is_deterministic_and_deduplicated() -> None:
     assert select_recovery_actions([])[0].id is RecoveryActionId.ROUTINE_CHECK_5
 
 
+def test_stage2_signal_drivers_prioritize_matching_actions() -> None:
+    actions = select_recovery_actions(
+        [ReportFactorCode.SLEEP_DECREASE],
+        stage2_signals=["overload"],
+    )
+
+    assert [action.id for action in actions] == [
+        RecoveryActionId.SCHEDULE_REDUCE_ONE,
+        RecoveryActionId.REST_30,
+        RecoveryActionId.SLEEP_EARLY_60,
+    ]
+
+
 def test_template_fallback_preserves_factors_and_action_ids() -> None:
     payload = request()
     result = build_template_fallback(payload)

@@ -145,6 +145,10 @@ class RecoveryReportGenerationRequest(_RecoveryModel):
         list[RecoveryAction],
         Field(min_length=1, max_length=3),
     ]
+    stage2_signal_drivers: Annotated[
+        list[Annotated[str, Field(min_length=1, max_length=32)]],
+        Field(max_length=6),
+    ] = Field(default_factory=list)
     prompt_version: Literal["recovery-report-prompt-v1"] = PROMPT_VERSION
 
     @model_validator(mode="after")
@@ -155,6 +159,8 @@ class RecoveryReportGenerationRequest(_RecoveryModel):
             raise ValueError("changes must have unique factor codes")
         if len(set(action_ids)) != len(action_ids):
             raise ValueError("selected actions must have unique ids")
+        if len(set(self.stage2_signal_drivers)) != len(self.stage2_signal_drivers):
+            raise ValueError("stage2 signal drivers must be unique")
         return self
 
 

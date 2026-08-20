@@ -98,7 +98,7 @@ def test_gemini_settings_use_supported_default_model(
     settings = GeminiReportSettings.from_env()
 
     assert settings.model_name == DEFAULT_GEMINI_MODEL
-    assert settings.model_name == "gemini-3.6-flash"
+    assert settings.model_name == "gemini-3.1-flash-lite"
 
 
 def test_shared_contracts_validate_pydantic_payloads() -> None:

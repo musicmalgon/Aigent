@@ -7,12 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-<<<<<<< Updated upstream
-from app.domain.recovery.models import RecoveryActionId
-=======
 from app.domain.recovery.catalog import select_default_recovery_actions
 from app.domain.recovery.models import RecoveryAction, RecoveryActionId
->>>>>>> Stashed changes
 from app.models.persistence import RecoveryPlanItem, RecoveryPlanSettings
 from app.models.user import User
 from app.repositories.recovery_plan_items import (
@@ -25,15 +21,11 @@ from app.repositories.recovery_plan_items import (
 from app.repositories.recovery_plan_settings import (
     get_or_create_recovery_plan_settings,
     update_recovery_plan_settings,
-<<<<<<< Updated upstream
-=======
 )
 from app.repositories.recovery_reports import (
     get_latest_recovery_report,
     get_recovery_report,
->>>>>>> Stashed changes
 )
-from app.repositories.recovery_reports import get_recovery_report
 from app.schemas.recovery_plan import (
     RecoveryPlanItemCreate,
     RecoveryPlanItemResponse,

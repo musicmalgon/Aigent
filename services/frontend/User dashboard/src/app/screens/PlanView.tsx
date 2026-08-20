@@ -5,23 +5,15 @@ import { CheckBox } from "../components/common";
 import { Calendar } from "../components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import {
-<<<<<<< Updated upstream
-  getRecoveryPlan,
-  getRecoveryPlanSettings,
-=======
   addRecoveryPlanItem,
   getRecoveryPlan,
   getRecoveryPlanSettings,
   getRecoveryRecommendations,
->>>>>>> Stashed changes
   updateRecoveryPlanItem,
   updateRecoveryPlanSettings,
   type RecoveryPlanItem,
   type RecoveryPlanSettings,
-<<<<<<< Updated upstream
-=======
   type RecoveryRecommendation,
->>>>>>> Stashed changes
 } from "../api/recoveryPlans";
 
 // "HH:MM:SS" -> "오후 8:00"
@@ -104,12 +96,8 @@ export function PlanView() {
     }
   };
 
-  const saveAlarm = async () => {
-    setAlarmSaving(true);
-    setSettingsError(null);
+  const addSuggestion = async (suggestion: RecoveryRecommendation) => {
     try {
-<<<<<<< Updated upstream
-=======
       const created = await addRecoveryPlanItem(suggestion.id);
       setItems(current => [...current, created]);
       setRecommendations(current => current.filter(r => r.id !== suggestion.id));
@@ -128,7 +116,6 @@ export function PlanView() {
     setAlarmSaving(true);
     setSettingsError(null);
     try {
->>>>>>> Stashed changes
       const updated = await updateRecoveryPlanSettings({ notification_time: `${alarmDraft}:00` });
       setSettings(updated);
       setAlarmOpen(false);

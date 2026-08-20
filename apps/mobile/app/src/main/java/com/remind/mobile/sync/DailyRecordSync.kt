@@ -6,6 +6,7 @@ import com.remind.mobile.network.ApiClient
 import com.remind.mobile.network.LoginRequest
 import com.remind.mobile.network.SignupRequest
 import retrofit2.HttpException
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -54,8 +55,10 @@ internal suspend fun signInTestAccount(): String {
 }
 
 /**
- * 어제 하루치 Health Connect 데이터를 읽어 백엔드에 전송한다. 수동 전송 버튼과
- * 주기 실행 워커가 공유하는 단일 경로이므로 Compose에 의존하지 않는다.
+ * 어제 하루(자정~자정) 전체 Health Connect 데이터를 읽어 백엔드에 전송한다.
+ * SyncWorker의 6시간 주기 자동 동기화와 PoC 화면의 "어제 데이터 서버로
+ * 전송" 버튼이 이 함수를 쓴다 -- 목적이 "하루가 끝난 뒤 그 하루를 요약해
+ * 보내는 것"이라 오늘 자정 이전 데이터만 다뤄야 정확하다.
  *
  * @param token 어느 계정으로 보낼지는 호출부 책임이다 (#141) -- 실사용자
  *   로그인(AuthStore에 영속 저장된 토큰)이거나, PoC 화면처럼 테스트 계정
@@ -69,12 +72,59 @@ suspend fun syncYesterdayRecord(
     token: String,
     onSubmitting: (hasAnyRealData: Boolean) -> Unit = {},
 ): SyncResult {
-    return try {
-        val zoneId = ZoneId.systemDefault()
-        val targetDate = LocalDate.now(zoneId).minusDays(1)
-        val start = targetDate.atStartOfDay(zoneId).toInstant()
-        val end = targetDate.plusDays(1).atStartOfDay(zoneId).toInstant()
+    val zoneId = ZoneId.systemDefault()
+    val targetDate = LocalDate.now(zoneId).minusDays(1)
+    return syncDailyRecord(
+        healthConnectManager,
+        token,
+        targetDate = targetDate,
+        zoneId = zoneId,
+        start = targetDate.atStartOfDay(zoneId).toInstant(),
+        end = targetDate.plusDays(1).atStartOfDay(zoneId).toInstant(),
+        onSubmitting = onSubmitting,
+    )
+}
 
+/**
+ * 오늘 자정부터 지금까지 Health Connect 데이터를 읽어 백엔드에 전송한다
+ * (#143). WebAppScreen의 "지금 동기화" 버튼 전용 -- 웹 "오늘 기록" 화면이
+ * 오늘 날짜 기록을 조회해서 채우는데, [syncYesterdayRecord]는 어제 날짜로
+ * 보내서 그 화면과 안 이어졌던 문제를 고친다.
+ *
+ * 하루가 아직 안 끝난 채로 보내는 거라, 같은 날 두 번째로 누르면 이미 만든
+ * 오늘 기록과 겹쳐 [SyncResult.AlreadySubmitted](409)가 난다 -- 그날 기록을
+ * 다시 갱신하는 건 웹 "오늘 기록" 화면의 수정 흐름(updateBehavioralRecord)
+ * 몫으로 남겨두고, 이 버튼은 "그날 첫 동기화로 오늘 기록 화면을 채워주는"
+ * 용도로만 쓴다.
+ */
+suspend fun syncTodayRecord(
+    healthConnectManager: HealthConnectManager,
+    token: String,
+    onSubmitting: (hasAnyRealData: Boolean) -> Unit = {},
+): SyncResult {
+    val zoneId = ZoneId.systemDefault()
+    val targetDate = LocalDate.now(zoneId)
+    return syncDailyRecord(
+        healthConnectManager,
+        token,
+        targetDate = targetDate,
+        zoneId = zoneId,
+        start = targetDate.atStartOfDay(zoneId).toInstant(),
+        end = Instant.now(),
+        onSubmitting = onSubmitting,
+    )
+}
+
+private suspend fun syncDailyRecord(
+    healthConnectManager: HealthConnectManager,
+    token: String,
+    targetDate: LocalDate,
+    zoneId: ZoneId,
+    start: Instant,
+    end: Instant,
+    onSubmitting: (hasAnyRealData: Boolean) -> Unit,
+): SyncResult {
+    return try {
         val steps = healthConnectManager.readStepsTotal(start, end)
         val sleepSessions = healthConnectManager.readSleepSessions(start, end)
         // "no data for the day" is a real, valid state the backend needs to

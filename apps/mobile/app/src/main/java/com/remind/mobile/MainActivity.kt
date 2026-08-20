@@ -46,6 +46,7 @@ import com.remind.mobile.network.ConsentType
 import com.remind.mobile.sync.SyncResult
 import com.remind.mobile.sync.scheduleDailySync
 import com.remind.mobile.sync.signInTestAccount
+import com.remind.mobile.sync.syncTodayRecord
 import com.remind.mobile.sync.syncYesterdayRecord
 import com.remind.mobile.ui.theme.ReMindTheme
 import kotlinx.coroutines.launch
@@ -175,11 +176,14 @@ fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit, aut
                             syncing = false
                             return@launch
                         }
-                        val result = syncYesterdayRecord(healthConnectManager, authToken)
+                        // 오늘 기록 화면(웹)이 오늘 날짜로 조회하므로, 어제가
+                        // 아니라 오늘 자정~지금 범위로 보내야 그 화면에
+                        // 이어진다 (#143).
+                        val result = syncTodayRecord(healthConnectManager, authToken)
                         syncStatusText = when (result) {
-                            is SyncResult.Success -> "동기화 완료 (${result.date})"
-                            is SyncResult.SuccessNoData -> "동기화 완료 — 어제는 기록된 측정값이 없었어요"
-                            SyncResult.AlreadySubmitted -> "이미 어제 데이터를 보냈어요"
+                            is SyncResult.Success -> "동기화 완료 (${result.date}) — 오늘 기록 화면에서 확인해 보세요"
+                            is SyncResult.SuccessNoData -> "동기화 완료 — 오늘은 아직 기록된 측정값이 없었어요"
+                            SyncResult.AlreadySubmitted -> "오늘 데이터를 이미 보냈어요 — 갱신은 오늘 기록 화면에서 해주세요"
                             is SyncResult.HttpFailure -> "동기화 실패 (HTTP ${result.code})"
                             is SyncResult.Failure -> "동기화 실패: ${result.message}"
                         }

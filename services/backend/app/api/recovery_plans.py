@@ -51,6 +51,21 @@ def read_recovery_plan(
     ]
 
 
+@router.get("/recommendations", response_model=list[RecoveryAction])
+def read_recovery_recommendations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[RecoveryAction]:
+    """Return usable suggestions even before a first report exists."""
+    report = get_latest_recovery_report(db, user_id=current_user.id)
+    if report is None:
+        return select_default_recovery_actions()
+    return [
+        RecoveryAction.model_validate(action)
+        for action in report.selected_actions
+    ]
+
+
 @router.post("", response_model=RecoveryPlanItemResponse, status_code=201)
 def add_recovery_plan_item(
     payload: RecoveryPlanItemCreate,

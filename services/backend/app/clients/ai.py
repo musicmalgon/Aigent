@@ -38,6 +38,7 @@ LOGGER = logging.getLogger(__name__)
 CLASSIFY_ENDPOINT = "v2/emotions/classify"
 BURNOUT_SIGNALS_ENDPOINT = "v1/burnout-signals/analyze"
 REPORT_ENDPOINT = "v1/recovery-reports/generate"
+ACTION_SELECTION_ENDPOINT = "v1/recovery-actions/select"
 LIVENESS_ENDPOINT = "health/live"
 READINESS_ENDPOINT = "health/ready"
 
@@ -120,6 +121,34 @@ class CoarseEmotionRequest(_WireModel):
     @classmethod
     def normalize_optional_utterance(cls, value: object) -> str | None:
         return _normalize_utterance(value, optional=True)
+
+
+class RecoveryActionCandidate(_WireModel):
+    id: Annotated[str, Field(min_length=1, max_length=64)]
+    label: Annotated[str, Field(min_length=1, max_length=100)]
+    description: Annotated[str, Field(min_length=1, max_length=320)]
+    signals: list[Annotated[str, Field(min_length=1, max_length=32)]]
+
+
+class RecoveryActionSelectionRequest(_WireModel):
+    candidates: Annotated[list[RecoveryActionCandidate], Field(min_length=1)]
+    stage2_signals: list[
+        Annotated[str, Field(min_length=1, max_length=32)]
+    ] = Field(default_factory=list)
+    factor_codes: list[
+        Annotated[str, Field(min_length=1, max_length=64)]
+    ] = Field(default_factory=list)
+    risk_level: Annotated[str, Field(min_length=1, max_length=32)]
+    risk_score: Annotated[StrictFloat, Field(ge=0, le=100)]
+    data_quality: Annotated[str, Field(min_length=1, max_length=32)]
+    is_provisional: StrictBool
+
+
+class RecoveryActionSelectionResponse(_WireModel):
+    ids: Annotated[
+        list[Annotated[str, Field(min_length=1, max_length=64)]],
+        Field(min_length=1, max_length=3),
+    ]
 
 
 class CoarseEmotionTopPrediction(_WireModel):
@@ -622,6 +651,31 @@ class AIServiceClient:
             ) from None
         return result
 
+    async def select_recovery_actions(
+        self,
+        request: RecoveryActionSelectionRequest,
+    ) -> RecoveryActionSelectionResponse:
+        result, _ = await self._request_model(
+            "POST",
+            ACTION_SELECTION_ENDPOINT,
+            request_model=request,
+            response_model=RecoveryActionSelectionResponse,
+            expected_statuses={200},
+        )
+        candidate_ids = {candidate.id for candidate in request.candidates}
+        if (
+            len(result.ids) > 3
+            or len(set(result.ids)) != len(result.ids)
+            or any(candidate_id not in candidate_ids for candidate_id in result.ids)
+        ):
+            raise AIServiceResponseValidationError(
+                "AI service recovery action selection failed validation",
+                endpoint=ACTION_SELECTION_ENDPOINT,
+                error_code="invalid_action_selection",
+                status_code=200,
+            )
+        return result
+
     async def check_liveness(self) -> LivenessResponse:
         result, _ = await self._request_model(
             "GET",
@@ -862,6 +916,9 @@ __all__ = [
     "CoarseEmotionTopPrediction",
     "LivenessResponse",
     "RecoveryReportGenerationRequest",
+    "RecoveryActionCandidate",
+    "RecoveryActionSelectionRequest",
+    "RecoveryActionSelectionResponse",
     "RecoveryReportGenerationResponse",
     "ReadinessResponse",
     "UncertaintyReason",

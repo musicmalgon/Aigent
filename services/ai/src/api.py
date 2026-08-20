@@ -26,6 +26,8 @@ from .report_generation import (
     RecoveryReportNotConfiguredError,
 )
 from .report_schemas import (
+    RecoveryActionSelectionRequest,
+    RecoveryActionSelectionResponse,
     RecoveryReportGenerationRequest,
     RecoveryReportGenerationResponse,
 )
@@ -246,6 +248,33 @@ def create_app(
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="recovery report generation failed",
+            ) from exc
+
+    @app.post(
+        "/v1/recovery-actions/select",
+        response_model=RecoveryActionSelectionResponse,
+        tags=["recovery-actions"],
+        summary="Select fixed recovery action ids",
+    )
+    async def select_recovery_actions(
+        request: RecoveryActionSelectionRequest,
+    ) -> RecoveryActionSelectionResponse:
+        if not generator.is_configured:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="recovery action selection is not configured",
+            )
+        try:
+            return await generator.select_actions(request)
+        except RecoveryReportNotConfiguredError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="recovery action selection is not configured",
+            ) from exc
+        except RecoveryReportGenerationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="recovery action selection failed",
             ) from exc
 
     return app

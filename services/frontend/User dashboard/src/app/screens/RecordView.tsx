@@ -3,6 +3,7 @@ import { ArrowRight, Pencil } from "lucide-react";
 import { Hairline, SummaryLine, TextButton } from "../components/common";
 import type { AppScreen } from "../types";
 import { ApiError } from "../api/client";
+import { createBaseline } from "../api/baselines";
 import { createRiskEvaluation } from "../api/riskEvaluations";
 import { createRecoveryReport } from "../api/recoveryReports";
 
@@ -21,6 +22,17 @@ import {
 
 function todayDateString() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+// 어제 날짜 -- baseline의 window_end로 쓴다. risk evaluation은 "baseline의
+// window_end가 평가일보다 앞서야" 평소 기준으로 인정한다(app/services/risk_evaluation.py의
+// `baseline.window_end >= record_date`면 못 찾은 것으로 취급). baseline을
+// 오늘 날짜로 계산하면 오늘 자신을 자기 자신의 평소 기준에 포함시키는 셈이
+// 되어 매번 거부된다.
+function yesterdayDateString() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -322,7 +334,23 @@ export function RecordView({
       });
 
       // --------------------------------------------------
-      // 2. Risk Evaluation 생성
+      // 2. 평소 기준(baseline) 갱신 -- risk evaluation이 요구하는 "평소 기준"이
+      // 실제로 존재하려면 어디선가는 반드시 이 호출이 있어야 한다. 서버에
+      // baseline을 자동으로 만들어주는 스케줄러가 없어서, 기록을 남길 때마다
+      // 여기서 다시 계산해 둔다. as_of_date는 어제로 준다 -- 오늘 날짜로
+      // 계산하면 오늘 자신이 자신의 평소 기준에 포함돼 risk evaluation이
+      // baseline을 "못 찾음" 취급하며 항상 409를 낸다(app/services/risk_evaluation.py:
+      // baseline.window_end가 평가일보다 앞서야 함). 기록이 아직 7일 미만이면
+      // status: "insufficient"로 저장될 뿐 에러는 아니고, 그 경우 바로 다음
+      // risk evaluation 호출이 (기존처럼) 409로 자연스럽게 안내를 띄운다.
+      // 이 갱신 자체가 실패해도 일기 저장을 막을 이유는 아니므로 조용히 넘어간다.
+      // --------------------------------------------------
+      await createBaseline({ as_of_date: yesterdayDateString() }).catch(err => {
+        console.warn("평소 기준(baseline) 갱신에 실패했습니다.", err);
+      });
+
+      // --------------------------------------------------
+      // 3. Risk Evaluation 생성
       // --------------------------------------------------
       try {
         const riskEvaluation =
@@ -331,7 +359,7 @@ export function RecordView({
           );
 
         // ------------------------------------------------
-        // 3. Recovery Report 생성
+        // 4. Recovery Report 생성
         // ------------------------------------------------
         try {
           await createRecoveryReport(

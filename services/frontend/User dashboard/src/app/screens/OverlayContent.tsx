@@ -4,9 +4,9 @@ import { Field, Integration, SummaryLine } from "../components/common";
 import type { AppScreen, OverlayKind } from "../types";
 import { getCurrentUser, updateUserName, updateUserPassword, deleteAccountData, type UserRead } from "../api/users";
 import { logout } from "../api/auth";
-import { getBehavioralRecordByDate, type BehavioralRecordRead } from "../api/behavioralRecords";
+import { deleteBehavioralRecord, getBehavioralRecordByDate, type BehavioralRecordRead } from "../api/behavioralRecords";
 import { getEmotionAnalyses, type EmotionAnalysisRead } from "../api/emotionAnalyses";
-import { getCurrentConsents, type ConsentRecord, type ConsentType } from "../api/consents";
+import { getCurrentConsents, grantConsent, withdrawConsent, type ConsentRecord, type ConsentType } from "../api/consents";
 
 // 화면에 보여줄 5개 항목 -> 백엔드 ConsentType 매핑 (Consent.tsx와 완전히 동일한 이름 사용 — "자세히" 상세 문구를 같이 찾아 쓰기 위함)
 const CONSENT_ITEM_TYPE_MAP: Record<string, ConsentType> = {
@@ -67,10 +67,17 @@ export function OverlayContent({
   const [recordEmotion, setRecordEmotion] = useState<EmotionAnalysisRead | null>(null);
   const [recordLoading, setRecordLoading] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
+  const [recordDeleteConfirming, setRecordDeleteConfirming] = useState(false);
+  const [recordDeleting, setRecordDeleting] = useState(false);
+  const [recordDeleteError, setRecordDeleteError] = useState<string | null>(null);
+  const [recordDeleted, setRecordDeleted] = useState(false);
 
   // --- consent-history 전용 상태 ---
   const [consentRecords, setConsentRecords] = useState<ConsentRecord[]>([]);
   const [consentLoading, setConsentLoading] = useState(false);
+  // 지금 철회/재동의 중인 항목(중복 클릭 방지용) + 실패 시 보여줄 문구
+  const [consentActionType, setConsentActionType] = useState<ConsentType | null>(null);
+  const [consentActionError, setConsentActionError] = useState<string | null>(null);
 
   // --- account 전용 상태 ---
   const [accountUser, setAccountUser] = useState<UserRead | null>(null);
@@ -96,6 +103,9 @@ export function OverlayContent({
     let cancelled = false;
     setRecordLoading(true);
     setRecordError(null);
+    setRecordDeleteConfirming(false);
+    setRecordDeleteError(null);
+    setRecordDeleted(false);
     (async () => {
       try {
         const record = await getBehavioralRecordByDate(selectedDate);
@@ -220,6 +230,40 @@ export function OverlayContent({
     }
   }
 
+  // health_data/emotion_diary 동의를 껐다 켰다 할 수 있게 한다 -- 백엔드
+  // DELETE/POST /api/v1/consents가 이미 있었는데도 이 화면이 상태만 읽고
+  // 표시할 뿐 실제로 철회/재동의하는 UI가 없었다.
+  async function handleToggleConsent(consentType: ConsentType, currentlyGranted: boolean) {
+    setConsentActionError(null);
+    setConsentActionType(consentType);
+    try {
+      const updated = currentlyGranted
+        ? await withdrawConsent(consentType)
+        : await grantConsent(consentType);
+      setConsentRecords(current => [updated, ...current.filter(r => r.consent_type !== consentType)]);
+    } catch (err) {
+      setConsentActionError(err instanceof Error ? err.message : "동의 상태를 바꾸지 못했습니다.");
+    } finally {
+      setConsentActionType(null);
+    }
+  }
+
+  // DELETE /api/v1/behavioral-records/{date}는 이미 있었는데 이 화면에
+  // 지우는 버튼이 없어서 아무도 부르지 않고 있었다.
+  async function handleDeleteRecord() {
+    if (!selectedDate) return;
+    setRecordDeleteError(null);
+    setRecordDeleting(true);
+    try {
+      await deleteBehavioralRecord(selectedDate);
+      setRecordDeleted(true);
+    } catch (err) {
+      setRecordDeleteError(err instanceof Error ? err.message : "기록을 삭제하지 못했습니다.");
+    } finally {
+      setRecordDeleting(false);
+    }
+  }
+
   if (kind === "forgot")
     return (
       <>
@@ -240,6 +284,11 @@ export function OverlayContent({
   if (kind === "record") {
     if (recordLoading) return <p className="text-sm text-muted-foreground">불러오는 중...</p>;
     if (recordError) return <p className="text-sm text-red-500">{recordError}</p>;
+
+    if (recordDeleted) {
+      return <p className="text-sm text-muted-foreground">{selectedDate} 기록을 삭제했어요.</p>;
+    }
+
     if (!recordData) return <p className="text-sm text-muted-foreground">이 날짜의 기록을 찾을 수 없어요.</p>;
 
     return (
@@ -261,6 +310,33 @@ export function OverlayContent({
         >
           오늘 기록 남기러 가기
         </button>
+
+        {recordDeleteError && <p className="mt-4 text-xs text-red-500">{recordDeleteError}</p>}
+
+        <div className="mt-10 border-t border-border pt-5">
+          {!recordDeleteConfirming ? (
+            <button
+              onClick={() => setRecordDeleteConfirming(true)}
+              className="text-xs text-[#8d5541] underline underline-offset-4"
+            >
+              이 날짜 기록 삭제
+            </button>
+          ) : (
+            <div className="flex items-center gap-4">
+              <p className="text-xs text-muted-foreground">정말 삭제할까요? 되돌릴 수 없어요.</p>
+              <button
+                onClick={() => void handleDeleteRecord()}
+                disabled={recordDeleting}
+                className="rounded-lg bg-[#8d5541] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+              >
+                {recordDeleting ? "삭제 중..." : "삭제하기"}
+              </button>
+              <button onClick={() => setRecordDeleteConfirming(false)} className="text-xs text-muted-foreground underline underline-offset-4">
+                취소
+              </button>
+            </div>
+          )}
+        </div>
       </>
     );
   }
@@ -295,6 +371,7 @@ export function OverlayContent({
     if (consentLoading) return <p className="text-sm text-muted-foreground">불러오는 중...</p>;
     return (
       <div className="divide-y divide-border border-y border-border">
+        {consentActionError && <p className="pt-4 text-xs text-red-500">{consentActionError}</p>}
         {(
           [
             ["서비스 이용약관", "필수"],
@@ -306,8 +383,9 @@ export function OverlayContent({
         ).map(([x, requiredLabel]) => {
           const consentType = CONSENT_ITEM_TYPE_MAP[x];
           const record = consentType ? consentRecords.find(r => r.consent_type === consentType) : undefined;
+          const granted = record?.status === "granted";
           const statusLabel = consentType
-            ? record?.status === "granted"
+            ? granted
               ? `${requiredLabel} · ${formatConsentDate(record.granted_at)}`
               : `${requiredLabel} · 동의 안 함`
             : `${requiredLabel} · 가입 시 동의`;
@@ -316,8 +394,24 @@ export function OverlayContent({
               <div>
                 <p className="text-sm">{x}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{statusLabel}</p>
+                {consentType && granted && (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    철회하면 {x === "건강·생활 데이터 활용 동의" ? "일상기록 저장" : "마음 기록 분석"}을 쓸 수 없어요.
+                  </p>
+                )}
               </div>
-              <button onClick={() => onOpenConsentDetail?.(x)} className="text-xs text-[#536458] underline underline-offset-4">자세히</button>
+              <div className="flex shrink-0 items-center gap-3">
+                {consentType && (
+                  <button
+                    onClick={() => void handleToggleConsent(consentType, granted)}
+                    disabled={consentActionType === consentType}
+                    className={`text-xs underline underline-offset-4 disabled:opacity-60 ${granted ? "text-[#8d5541]" : "text-[#536458]"}`}
+                  >
+                    {consentActionType === consentType ? "처리 중..." : granted ? "철회" : "동의하기"}
+                  </button>
+                )}
+                <button onClick={() => onOpenConsentDetail?.(x)} className="text-xs text-[#536458] underline underline-offset-4">자세히</button>
+              </div>
             </div>
           );
         })}

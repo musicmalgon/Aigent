@@ -232,28 +232,46 @@ def test_demo_flow_chains_every_endpoint_from_signup_to_dashboard(
     assert body["latest_report"]["generation_status"] == "llm_generated"
 
 
-def test_pipeline_is_blocked_at_its_first_write_without_consent(
+def test_pipeline_first_write_no_longer_requires_health_data_consent(
     client: TestClient,
 ) -> None:
-    """위 해피 패스가 동의 단계에 실제로 의존한다는 근거.
+    """생활 기록 직접 입력은 health_data 동의와 무관하다.
 
-    동의를 건너뛰면 파이프라인의 첫 쓰기부터 막히므로, 위 테스트의 순서는
-    우연히 성립한 것이 아니다.
+    health_data("건강·생활 데이터 활용 동의")는 저장된 데이터를 분석에
+    "활용"하는 것에 대한 동의이지, 손으로 남기는 기록 자체를 막는
+    전제조건이 아니다. Samsung Health 자동 동기화 동의 여부와 직접 입력
+    권한을 분리한 이후로는 동의 없이도 파이프라인의 첫 쓰기가 성공한다.
+
+    다만 마음 기록(감정 분석)은 여전히 emotion_diary 동의를 요구한다 --
+    동의가 파이프라인 중간 단계에 실제로 영향을 준다는 근거는 남겨둔다.
     """
 
     headers, _ = signup_and_login(
         client,
         email="e2e-demo-flow-no-consent@example.com",
     )
+    record_date = datetime.now(UTC).date()
 
-    response = client.post(
+    behavioral_response = client.post(
         BEHAVIORAL_PATH,
         headers=headers,
         json=canonical_daily_record_payload(
-            record_date=datetime.now(UTC).date().isoformat(),
+            record_date=record_date.isoformat(),
         ),
     )
-
-    assert response.status_code == 403
-    assert response.json() == {"detail": "health_data 동의가 필요합니다"}
+    assert behavioral_response.status_code == 201, behavioral_response.text
+    # 하루치 기록만으로는 여전히 리포트를 만들 만큼 충분하지 않다 -- 동의
+    # 여부가 아니라 기록 일수 부족으로 여기서 막힌다.
     assert readiness_state(client, headers) == "insufficient_records"
+
+    emotion_response = client.post(
+        EMOTION_PATH,
+        headers=headers,
+        json={
+            "record_date": record_date.isoformat(),
+            "hs01": "오늘 있었던 일",
+            "hs02": "그때 든 생각이나 느낌",
+        },
+    )
+    assert emotion_response.status_code == 403
+    assert emotion_response.json() == {"detail": "emotion_diary 동의가 필요합니다"}

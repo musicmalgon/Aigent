@@ -2,6 +2,7 @@ package com.remind.mobile
 
 import android.content.ActivityNotFoundException
 import android.os.Bundle
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -28,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -49,6 +51,7 @@ import com.remind.mobile.sync.signInTestAccount
 import com.remind.mobile.sync.syncTodayRecord
 import com.remind.mobile.sync.syncYesterdayRecord
 import com.remind.mobile.ui.theme.ReMindTheme
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 import java.time.Instant
@@ -76,9 +79,15 @@ class MainActivity : ComponentActivity() {
                     // (App.tsx의 restoringSession과 같은 이유, #119).
                     var authToken by remember { mutableStateOf<String?>(null) }
                     var authLoaded by remember { mutableStateOf(false) }
+                    // 한 번 읽고 마는 게 아니라 계속 구독한다. 토큰이 지워지는
+                    // 순간(401 만료 / 웹 로그아웃)은 이 화면 밖의 코루틴에서
+                    // 오는데, 예전처럼 최초 1회만 읽으면 그 변화가 화면에
+                    // 도달하지 못해 앱이 영원히 "로그인됨"으로 보였다.
                     LaunchedEffect(Unit) {
-                        authToken = authStore.getToken()
-                        authLoaded = true
+                        authStore.tokenFlow.collect { token ->
+                            authToken = token
+                            authLoaded = true
+                        }
                     }
 
                     // 웹 프론트엔드가 대시보드/기록/리포트 등 실사용자 화면을 이미
@@ -99,10 +108,9 @@ class MainActivity : ComponentActivity() {
                             LoginScreen(
                                 modifier = Modifier.padding(innerPadding),
                                 onLoginSuccess = { token ->
-                                    scope.launch {
-                                        authStore.saveToken(token)
-                                        authToken = token
-                                    }
+                                    // 저장만 하면 위의 tokenFlow 구독이
+                                    // authToken을 갱신한다 (화면 전환의 단일 경로).
+                                    scope.launch { authStore.saveToken(token) }
                                 },
                             )
                         }
@@ -117,6 +125,7 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(innerPadding),
                                 onOpenPocScreen = { showPocScreen = true },
                                 authToken = authToken!!,
+                                onSessionEnded = { scope.launch { authStore.clearToken() } },
                             )
                         }
                     }
@@ -133,10 +142,23 @@ class MainActivity : ComponentActivity() {
 // AndroidView는 Compose 트리 안에 기존 View 시스템 컴포넌트(WebView 등)를
 // 끼워 넣을 때 쓰는 브릿지다. factory는 View를 한 번만 생성하고, update는
 // 리컴포지션마다(그리고 생성 직후) 호출돼 최신 상태를 반영한다.
+//
+// @param onSessionEnded 네이티브 세션을 끝내야 할 때(토큰 만료 401 / 웹에서
+//   로그아웃) 호출한다. 호출부가 AuthStore를 지우면 tokenFlow를 타고
+//   로그인 화면이 다시 뜬다 -- 두 경우 모두 결과가 같으므로 경로를 하나만 둔다.
 @Composable
-fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit, authToken: String) {
+fun WebAppScreen(
+    modifier: Modifier = Modifier,
+    onOpenPocScreen: () -> Unit,
+    authToken: String,
+    onSessionEnded: () -> Unit,
+) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var canGoBack by remember { mutableStateOf(false) }
+
+    // WebView는 factory에서 한 번만 만들어지므로 그때 붙잡은 콜백이 오래 남는다.
+    // rememberUpdatedState로 감싸 최신 콜백을 보게 한다.
+    val currentOnSessionEnded by rememberUpdatedState(onSessionEnded)
 
     // "지금 동기화" 버튼 (#141) -- 숨겨진 PoC 화면이 아니라 앱의 기본 화면에
     // 노출해서, 6시간 주기 SyncWorker를 기다리지 않고 바로 오늘/어제 데이터를
@@ -183,7 +205,13 @@ fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit, aut
                         syncStatusText = when (result) {
                             is SyncResult.Success -> "동기화 완료 (${result.date}) — 오늘 기록 화면에서 확인해 보세요"
                             is SyncResult.SuccessNoData -> "동기화 완료 — 오늘은 아직 기록된 측정값이 없었어요"
-                            SyncResult.AlreadySubmitted -> "오늘 데이터를 이미 보냈어요 — 갱신은 오늘 기록 화면에서 해주세요"
+                            // 만료된 토큰을 그대로 두면 이 버튼은 앞으로도 계속
+                            // 401만 낸다. 지워서 로그인 화면으로 돌려보낸다
+                            // (이 문구는 화면이 곧 교체되며 사라진다).
+                            SyncResult.Unauthorized -> {
+                                currentOnSessionEnded()
+                                "로그인이 만료됐어요 — 다시 로그인해 주세요"
+                            }
                             is SyncResult.HttpFailure -> "동기화 실패 (HTTP ${result.code})"
                             is SyncResult.Failure -> "동기화 실패: ${result.message}"
                         }
@@ -211,6 +239,10 @@ fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit, aut
                     // DOM storage가 없으면 로그인 상태가 유지되지 않는다.
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
+                    addJavascriptInterface(
+                        WebAuthBridge { currentOnSessionEnded() },
+                        WEB_AUTH_BRIDGE_NAME,
+                    )
                     webViewClient = object : WebViewClient() {
                         // WebViewClient를 지정하지 않으면 링크 클릭 시 외부
                         // 브라우저로 빠져나간다 -- 이 오버라이드가 그걸 막는
@@ -222,6 +254,15 @@ fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit, aut
                         ) {
                             canGoBack = view.canGoBack()
                         }
+
+                        override fun onPageFinished(view: WebView, url: String?) {
+                            // 우리 웹앱 문서에서만 감시자를 심는다. 페이지 스크립트가
+                            // 다 돈 뒤라 React가 이미 마운트돼 있고, 로그아웃은
+                            // 그 뒤 사용자 조작으로 일어나므로 놓치지 않는다.
+                            if (url != null && url.startsWith(WEB_APP_URL)) {
+                                view.evaluateJavascript(WEB_AUTH_WATCHER_JS, null)
+                            }
+                        }
                     }
                     loadUrl(WEB_APP_URL)
                 }
@@ -230,6 +271,65 @@ fun WebAppScreen(modifier: Modifier = Modifier, onOpenPocScreen: () -> Unit, aut
         )
     }
 }
+
+private const val WEB_AUTH_BRIDGE_NAME = "ReMindNative"
+
+/** 웹앱(client.ts)이 로그인 토큰을 담아두는 localStorage 키. */
+private const val WEB_ACCESS_TOKEN_KEY = "access_token"
+
+/**
+ * 웹뷰 안에서 로그아웃이 일어났다는 걸 네이티브에 알려주는 브릿지 (#C8).
+ *
+ * 웹 로그아웃은 자기 localStorage만 지우고 끝나서 네이티브는 그 사실을 알 방법이
+ * 없었다. 그 결과 웹에서 다른 계정으로 갈아타도 네이티브는 예전 계정 토큰으로
+ * 건강 데이터를 계속 올렸다. URL로는 감지할 수 없다 -- 웹앱이 화면 전환을
+ * React 상태로만 하는 SPA라 로그아웃해도 주소가 그대로다.
+ *
+ * 주의 1: 이 메서드는 UI 스레드가 아니라 WebView의 JS 브릿지 스레드에서
+ * 불린다. 호출부는 스레드 안전해야 한다(여기 콜백은 코루틴 launch만 한다).
+ * 주의 2: addJavascriptInterface로 노출한 객체는 이 웹뷰가 여는 모든 페이지가
+ * 부를 수 있다. 여기서 할 수 있는 일이 "이 기기의 네이티브 토큰을 지운다"뿐이라
+ * 피해가 강제 로그아웃에 그쳐 PoC 범위에서는 감수한다 (origin 제한이 필요하면
+ * androidx.webkit의 WebMessageListener로 옮겨야 하는데 의존성이 늘어난다).
+ */
+private class WebAuthBridge(private val onWebLoggedOut: () -> Unit) {
+    @JavascriptInterface
+    fun onLogout() {
+        onWebLoggedOut()
+    }
+}
+
+/**
+ * 웹앱의 로그인 토큰이 지워지는 순간을 잡아 [WebAuthBridge]로 알린다.
+ *
+ * localStorage 인스턴스에 직접 메서드를 덮어쓸 수는 없다 -- Storage에는 이름
+ * 있는 프로퍼티 setter가 있어서 `localStorage.removeItem = fn`이 함수를 씌우는
+ * 대신 "removeItem"이라는 키에 값을 저장해버린다. 그래서 prototype 쪽을 고친다.
+ */
+private const val WEB_AUTH_WATCHER_JS = """
+(function () {
+  if (window.__remindAuthWatcherInstalled) return;
+  var proto = window.Storage && window.Storage.prototype;
+  if (!proto) return;
+  window.__remindAuthWatcherInstalled = true;
+
+  var removeItem = proto.removeItem;
+  proto.removeItem = function (key) {
+    removeItem.apply(this, arguments);
+    if (this === window.localStorage && key === '$WEB_ACCESS_TOKEN_KEY') {
+      $WEB_AUTH_BRIDGE_NAME.onLogout();
+    }
+  };
+
+  var clear = proto.clear;
+  proto.clear = function () {
+    clear.apply(this, arguments);
+    if (this === window.localStorage) {
+      $WEB_AUTH_BRIDGE_NAME.onLogout();
+    }
+  };
+})();
+"""
 
 @Composable
 fun HealthConnectPocScreen(modifier: Modifier = Modifier, onBackToWebApp: () -> Unit = {}) {
@@ -451,8 +551,11 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier, onBackToWebApp: () -> 
                                 "sleep=${result.sleepMinutes ?: "없음"}분"
                         is SyncResult.SuccessNoData ->
                             "저장 성공 (${result.date}): 데이터 없음 상태로 기록됨 (0 아님)"
-                        SyncResult.AlreadySubmitted ->
-                            "이미 어제 데이터를 전송했어요 (중복 저장 방지)"
+                        // 여기 토큰은 테스트 계정(signInTestAccount) 것이라
+                        // 실사용자 토큰(AuthStore)을 건드리면 안 된다 -- 위
+                        // "테스트 계정 로그인"을 다시 누르면 된다.
+                        SyncResult.Unauthorized ->
+                            "테스트 계정 토큰이 만료됐어요 — 다시 로그인해 주세요"
                         is SyncResult.HttpFailure -> "전송 실패: HTTP ${result.code}"
                         is SyncResult.Failure -> "전송 실패: ${result.message}"
                     }

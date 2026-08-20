@@ -1,25 +1,43 @@
 import { apiFetch } from "./client";
+import type { ReportFactorCode, ReportGenerationStatus, RiskLevel } from "./recoveryReports";
 
-// app/schemas/dashboard.py 전체를 못 봐서 baseline 세부 필드는 넓게 잡아둠
+// app/schemas/dashboard.py 기준
+export type BaselineStatus = "ready" | "insufficient" | "missing";
+
+// 리포트에 실리는 코드와 달리 대시보드는 "판단 불가" 코드도 그대로 내려준다
+// (app/domain/risk/models.py의 FactorCode 전체)
+export type DashboardFactorCode = ReportFactorCode | "insufficient_baseline" | "insufficient_data";
+
+// app/services/dashboard.py의 ReadinessState -- 홈 화면 빈 상태 사다리
+export type ReadinessState =
+  | "insufficient_records"
+  | "baseline_pending"
+  | "baseline_ready"
+  | "risk_evaluation_ready"
+  | "recovery_report_ready";
+
 export interface DashboardRecordStatus {
   today_recorded: boolean;
   recorded_days: number;
 }
 
 export interface DashboardBaselineStatus {
-  [key: string]: unknown; // TODO: schemas/dashboard.py 확인 필요
+  status: BaselineStatus;
+  sample_days: number;
+  window_end: string; // YYYY-MM-DD
+  created_at: string;
 }
 
 export interface DashboardRiskStatus {
-  level: string;
-  date: string;
-  top_factors: string[];
+  level: RiskLevel;
+  date: string; // YYYY-MM-DD
+  top_factors: DashboardFactorCode[]; // 기여도 내림차순, 최대 3개
 }
 
 export interface DashboardReportStatus {
   id: string;
   headline: string;
-  generation_status: string;
+  generation_status: ReportGenerationStatus;
   generated_at: string;
 }
 
@@ -29,8 +47,6 @@ export interface DashboardResponse {
   latest_risk: DashboardRiskStatus | null;
   latest_report: DashboardReportStatus | null;
 }
-
-export type ReadinessState = string; // TODO: classify_readiness 반환값 확인 필요
 
 export interface ReadinessResponse {
   state: ReadinessState;

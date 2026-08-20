@@ -5,12 +5,23 @@ import { CheckBox } from "../components/common";
 import { Calendar } from "../components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
 import {
+<<<<<<< Updated upstream
   getRecoveryPlan,
   getRecoveryPlanSettings,
+=======
+  addRecoveryPlanItem,
+  getRecoveryPlan,
+  getRecoveryPlanSettings,
+  getRecoveryRecommendations,
+>>>>>>> Stashed changes
   updateRecoveryPlanItem,
   updateRecoveryPlanSettings,
   type RecoveryPlanItem,
   type RecoveryPlanSettings,
+<<<<<<< Updated upstream
+=======
+  type RecoveryRecommendation,
+>>>>>>> Stashed changes
 } from "../api/recoveryPlans";
 
 // "HH:MM:SS" -> "오후 8:00"
@@ -97,6 +108,27 @@ export function PlanView() {
     setAlarmSaving(true);
     setSettingsError(null);
     try {
+<<<<<<< Updated upstream
+=======
+      const created = await addRecoveryPlanItem(suggestion.id);
+      setItems(current => [...current, created]);
+      setRecommendations(current => current.filter(r => r.id !== suggestion.id));
+    } catch (err) {
+      // 이미 계획에 있는 행동이면(409) 목록에서만 조용히 지운다 -- 사용자
+      // 입장에서는 어차피 "추가돼 있다"는 결과가 같다.
+      if (err instanceof Error && err.message.includes("already in the plan")) {
+        setRecommendations(current => current.filter(r => r.id !== suggestion.id));
+        return;
+      }
+      setError(err instanceof Error ? err.message : "회복 계획에 추가하지 못했어요.");
+    }
+  };
+
+  const saveAlarm = async () => {
+    setAlarmSaving(true);
+    setSettingsError(null);
+    try {
+>>>>>>> Stashed changes
       const updated = await updateRecoveryPlanSettings({ notification_time: `${alarmDraft}:00` });
       setSettings(updated);
       setAlarmOpen(false);

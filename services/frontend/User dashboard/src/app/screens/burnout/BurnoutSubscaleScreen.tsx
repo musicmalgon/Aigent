@@ -11,6 +11,8 @@ export function BurnoutSubscaleScreen({
   totalSubSteps,
   onNext,
   onBack,
+  submitting,
+  notice,
 }: {
   nameKo: string;
   nameEn: string;
@@ -20,8 +22,13 @@ export function BurnoutSubscaleScreen({
   questions: string[];
   subStep: number; // 1-based
   totalSubSteps: number;
-  onNext: () => void;
+  /** 리커트 응답(0~4)을 그대로 넘긴다 -- 채점은 BurnoutFlow가 모아서 한다 */
+  onNext: (answers: number[]) => void;
   onBack?: () => void;
+  /** 마지막 영역에서 결과를 저장하는 동안 버튼을 잠근다 */
+  submitting?: boolean;
+  /** 저장 실패처럼 사용자를 붙잡아두지 않는 안내 문구 */
+  notice?: string;
 }) {
   const total = questions.length;
   const [answers, setAnswers] = useState<(number | null)[]>(Array(total).fill(null));
@@ -88,13 +95,15 @@ export function BurnoutSubscaleScreen({
             <p className="text-xs text-muted-foreground">{allAnswered ? "모든 문항에 응답했어요." : `${total - answered}개 문항이 남았어요.`}</p>
           )}
           <button
-            onClick={onNext}
-            disabled={!allAnswered}
+            // 모든 문항에 응답해야 버튼이 열리므로 이 시점의 answers엔 null이 없다
+            onClick={() => onNext(answers.filter((a): a is number => a !== null))}
+            disabled={!allAnswered || submitting}
             className="rounded-lg bg-[#68796b] px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-[#b7beb5]"
           >
-            다음
+            {submitting ? "저장 중..." : "다음"}
           </button>
         </div>
+        {notice && <p className="mt-4 text-right text-xs text-muted-foreground">{notice}</p>}
       </div>
     </main>
   );

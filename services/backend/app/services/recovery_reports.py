@@ -37,6 +37,7 @@ from app.models.persistence import (
 )
 from app.repositories.baselines import get_baseline
 from app.repositories.behavioral_records import list_daily_records
+from app.repositories.emotion_results import list_emotion_results_by_date_range
 from app.repositories.recovery_reports import create_recovery_report
 from app.repositories.risk_evaluations import get_risk_evaluation
 from app.services.behavioral_record_mapper import (
@@ -142,6 +143,15 @@ _ACTION_REASON = {
     ),
 }
 
+_STAGE2_SIGNAL_ORDER = (
+    "exhaustion",
+    "overload",
+    "helplessness",
+    "low_efficacy",
+    "anxiety",
+    "irritability",
+)
+
 
 def _round(value: float | int | None) -> float | None:
     return round(float(value), 2) if value is not None else None
@@ -197,6 +207,49 @@ def _factor_by_code(
             FactorCode.INSUFFICIENT_DATA,
         }
     }
+
+
+def _stage2_signal_drivers(
+    *,
+    session: Session,
+    user_id: str,
+    start_date: date,
+    end_date: date,
+) -> list[str]:
+    """Return validated active Stage 2 labels seen during the report window.
+
+    The persistence payload is intentionally treated as untrusted provenance:
+    only labels explicitly listed as both active and validated are eligible
+    to influence recovery actions.
+    """
+
+    counts = {label: 0 for label in _STAGE2_SIGNAL_ORDER}
+    seen_dates: set[date] = set()
+    for result in list_emotion_results_by_date_range(
+        session,
+        user_id=user_id,
+        start_date=start_date,
+        end_date=end_date,
+    ):
+        if result.record_date is None or result.record_date in seen_dates:
+            continue
+        seen_dates.add(result.record_date)
+        payload = result.burnout_signal_payload
+        if not isinstance(payload, dict):
+            continue
+        active = payload.get("active_signals")
+        validated = payload.get("validated_signals")
+        if not isinstance(active, list) or not isinstance(validated, list):
+            continue
+        eligible = set(active).intersection(validated)
+        for label in _STAGE2_SIGNAL_ORDER:
+            if label in eligible:
+                counts[label] += 1
+    return [
+        label
+        for label in _STAGE2_SIGNAL_ORDER
+        if counts[label] > 0
+    ]
 
 
 def _average_metric(
@@ -448,6 +501,12 @@ def _load_prepared(
         ) from exc
 
     factor_codes = _report_factor_codes(result)
+    stage2_signal_drivers = _stage2_signal_drivers(
+        session=session,
+        user_id=user_id,
+        start_date=period_start,
+        end_date=evaluation.record_date,
+    )
     factors = _factor_by_code(result)
     changes = [
         change
@@ -473,7 +532,11 @@ def _load_prepared(
             record_days=len(records),
         ),
         changes=changes,
-        selected_actions=select_recovery_actions(factor_codes),
+        selected_actions=select_recovery_actions(
+            factor_codes,
+            stage2_signals=stage2_signal_drivers,
+        ),
+        stage2_signal_drivers=stage2_signal_drivers,
     )
     return (
         evaluation,

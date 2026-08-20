@@ -302,6 +302,12 @@ class EmotionAnalysisResult(Base):
     probabilities: Mapped[dict[str, float] | None] = mapped_column(
         StrictJSON(none_as_null=True)
     )
+    # Informational Stage 2 output captured alongside the source diary
+    # analysis.  It is deliberately separate from the coarse emotion
+    # probabilities and is never used by the risk engine directly.
+    burnout_signal_payload: Mapped[dict[str, Any] | None] = mapped_column(
+        StrictJSON(none_as_null=True)
+    )
     margin: Mapped[float | None] = mapped_column(Float)
     provisional: Mapped[bool] = mapped_column(
         Boolean,

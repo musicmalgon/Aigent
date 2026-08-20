@@ -26,6 +26,9 @@ class RecoveryReportFacts(PersistenceSchema):
     data_quality: Literal["sufficient", "insufficient"]
     period: RecoveryReportPeriod
     changes: Annotated[list[RecoveryReportChange], Field(max_length=3)]
+    stage2_signal_drivers: Annotated[list[str], Field(max_length=6)] = Field(
+        default_factory=list
+    )
 
 
 class RecoveryReportResponse(PersistenceSchema):

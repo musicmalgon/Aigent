@@ -67,6 +67,13 @@ production database.
 | `SQLADMIN_ENABLED` | Registers SQLAdmin only when explicitly enabled |
 | `SQLADMIN_PATH` | Non-root path for the development admin UI |
 | `AI_SERVICE_BASE_URL` | Internal Emotion and Recovery Report AI service URL |
+| `STAGE2_BURNOUT_SIGNALS_ENABLED` | Opt-in capture/use of validated Stage 2 signals for recovery ranking |
+
+When the AI service has the Stage 2 artifact configured, each emotion-diary
+analysis also captures its informational burnout-signal payload. The recovery
+report planner uses only labels marked both `active` and `validated` to rank
+low-intensity actions; the payload never changes the Risk Engine score. Apply
+the `20260820_0009` migration before enabling this path in a deployed backend.
 
 Production startup fails when `JWT_SECRET_KEY` is missing or resembles a public
 placeholder. Keep production secrets in the deployment secret manager. Do not

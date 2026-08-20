@@ -118,6 +118,7 @@ class EmotionResultCreate(PersistenceSchema):
         | Mapping[EmotionV2Label, Probability]
         | None
     )
+    burnout_signal_payload: dict[str, Any] | None = None
     margin: Probability | None = None
     provisional: bool = False
     threshold_version: Annotated[str, Field(min_length=1, max_length=64)] | None = None

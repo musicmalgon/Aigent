@@ -49,6 +49,9 @@ class Settings(BaseSettings):
         le=300,
     )
     ai_service_auth_token: SecretStr | None = None
+    # Stage 2 remains opt-in until the deployed artifact is present and
+    # calibration policy approves using its signals for recovery ranking.
+    stage2_burnout_signals_enabled: bool = False
 
     # --- Google OAuth ---
     google_client_id: str | None = None

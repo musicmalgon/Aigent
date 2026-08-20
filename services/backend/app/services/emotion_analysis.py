@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.clients.ai import (
     AIServiceClient,
+    AIServiceError,
+    BurnoutSignalResponse,
     CoarseEmotionLabel,
     CoarseEmotionRequest,
     CoarseEmotionResponse,
@@ -129,6 +131,14 @@ def to_emotion_analysis_read(
     )
 
 
+def _map_burnout_signal_payload(
+    response: BurnoutSignalResponse,
+) -> dict[str, object]:
+    """Persist structured Stage 2 provenance without storing diary text."""
+
+    return response.model_dump(mode="json")
+
+
 async def analyze_and_stage_emotion_result(
     session: Session,
     *,
@@ -142,6 +152,22 @@ async def analyze_and_stage_emotion_result(
         response,
         record_date=record_date,
     )
+    # Stage 2 is fail-open: a missing local artifact must not block the
+    # ordinary emotion diary. When available, its output is persisted for
+    # recovery-plan ranking (validated labels only are consumed downstream).
+    analyze_burnout_signals = getattr(ai_client, "analyze_burnout_signals", None)
+    if (
+        getattr(ai_client, "stage2_burnout_signals_enabled", False)
+        and analyze_burnout_signals is not None
+    ):
+        try:
+            burnout_response = await analyze_burnout_signals(request)
+        except AIServiceError:
+            burnout_response = None
+        if burnout_response is not None:
+            payload.burnout_signal_payload = _map_burnout_signal_payload(
+                burnout_response
+            )
     return emotion_results.create_emotion_result(
         session,
         user_id=user_id,

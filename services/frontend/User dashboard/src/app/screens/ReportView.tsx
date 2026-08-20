@@ -26,6 +26,15 @@ const RISK_LABELS: Record<RiskLevel, string> = {
   very_high: "매우 높음",
 };
 
+const STAGE2_SIGNAL_LABELS: Record<string, string> = {
+  exhaustion: "소진",
+  overload: "과부하",
+  helplessness: "통제감 저하",
+  low_efficacy: "효능감 저하",
+  anxiety: "불안 신호",
+  irritability: "예민함",
+};
+
 function formatMetricValue(metric: ReportMetric, value: number): string {
   switch (metric) {
     case "sleep_minutes":
@@ -168,6 +177,11 @@ export function ReportView({ go }: { go: (screen: AppScreen) => void }) {
       </section>
 
       <section className="mt-12 border-t border-border pt-8">
+        {facts.stage2_signal_drivers.length > 0 && (
+          <p className="mb-4 text-xs text-muted-foreground">
+            최근 기록에서 확인된 회복 신호 · {facts.stage2_signal_drivers.map(signal => STAGE2_SIGNAL_LABELS[signal] ?? signal).join(", ")}
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">{content.recommendation_intro}</p>
         <div className="mt-5 divide-y divide-border border-y border-border">
           {suggestions.map(({ action, reason }, i) => (

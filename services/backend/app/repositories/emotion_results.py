@@ -40,6 +40,7 @@ def create_emotion_result(
             if payload.probabilities is not None
             else None
         ),
+        burnout_signal_payload=payload.burnout_signal_payload,
         threshold_version=payload.threshold_version,
         neutral_gate_decision=(
             payload.neutral_gate_decision.value
@@ -128,6 +129,31 @@ def list_emotion_results(
     )
 
 
+def list_emotion_results_by_date_range(
+    session: Session,
+    *,
+    user_id: str,
+    start_date: date,
+    end_date: date,
+) -> list[EmotionAnalysisResult]:
+    return list(
+        session.scalars(
+            select(EmotionAnalysisResult)
+            .where(
+                EmotionAnalysisResult.user_id == user_id,
+                EmotionAnalysisResult.record_date >= start_date,
+                EmotionAnalysisResult.record_date <= end_date,
+            )
+            .order_by(
+                EmotionAnalysisResult.record_date.desc(),
+                EmotionAnalysisResult.analyzed_at.desc(),
+                EmotionAnalysisResult.created_at.desc(),
+                EmotionAnalysisResult.id.desc(),
+            )
+        )
+    )
+
+
 def delete_all_emotion_results_for_user(
     session: Session,
     *,
@@ -153,4 +179,5 @@ __all__ = [
     "get_latest_emotion_result",
     "get_latest_emotion_result_by_date",
     "list_emotion_results",
+    "list_emotion_results_by_date_range",
 ]

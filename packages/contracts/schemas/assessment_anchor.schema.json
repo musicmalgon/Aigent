@@ -72,7 +72,10 @@
         "exhaustion",
         "academic_burden",
         "occupational_burden",
-        "recovery_difficulty"
+        "recovery_difficulty",
+        "mental_distance",
+        "cognitive_control",
+        "emotional_control"
       ]
     },
     "interpretationScope": {

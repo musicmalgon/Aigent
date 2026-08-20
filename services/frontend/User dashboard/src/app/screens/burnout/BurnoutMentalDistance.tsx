@@ -9,7 +9,7 @@ export function BurnoutMentalDistance({
 }: {
   subStep: number;
   totalSubSteps: number;
-  onNext: () => void;
+  onNext: (answers: number[]) => void;
   onBack: () => void;
 }) {
   return (

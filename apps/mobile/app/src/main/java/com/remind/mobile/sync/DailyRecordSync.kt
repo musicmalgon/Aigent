@@ -3,6 +3,8 @@ package com.remind.mobile.sync
 import com.remind.mobile.HealthConnectManager
 import com.remind.mobile.buildDailyRecordCreate
 import com.remind.mobile.network.ApiClient
+import com.remind.mobile.network.DailyRecordCreate
+import com.remind.mobile.network.DailyRecordRead
 import com.remind.mobile.network.LoginRequest
 import com.remind.mobile.network.SignupRequest
 import retrofit2.HttpException
@@ -24,8 +26,14 @@ sealed interface SyncResult {
     /** 저장은 성공했지만 그날 실제 측정값이 하나도 없었던 경우 (0이 아니라 미수집). */
     data class SuccessNoData(val date: String) : SyncResult
 
-    /** 백엔드가 user+date 중복을 막아 409를 준 경우 -- 실패가 아니라 정상 종료. */
-    data object AlreadySubmitted : SyncResult
+    /**
+     * 토큰이 만료/무효화돼 401을 받은 경우. 다른 HTTP 오류와 달리 재시도로는
+     * 절대 풀리지 않고(백엔드 JWT TTL 30분, refresh 토큰 없음) 저장된 토큰을
+     * 지워 다시 로그인시키는 것만이 답이라, 호출부가 구분할 수 있게 별도
+     * 상태로 둔다. 단, 어느 토큰을 지울지는 호출부 책임이다 -- PoC 화면은
+     * 테스트 계정 토큰([signInTestAccount])을 쓰므로 실사용자 토큰을 지우면 안 된다.
+     */
+    data object Unauthorized : SyncResult
 
     data class HttpFailure(val code: Int) : SyncResult
 
@@ -91,11 +99,9 @@ suspend fun syncYesterdayRecord(
  * 오늘 날짜 기록을 조회해서 채우는데, [syncYesterdayRecord]는 어제 날짜로
  * 보내서 그 화면과 안 이어졌던 문제를 고친다.
  *
- * 하루가 아직 안 끝난 채로 보내는 거라, 같은 날 두 번째로 누르면 이미 만든
- * 오늘 기록과 겹쳐 [SyncResult.AlreadySubmitted](409)가 난다 -- 그날 기록을
- * 다시 갱신하는 건 웹 "오늘 기록" 화면의 수정 흐름(updateBehavioralRecord)
- * 몫으로 남겨두고, 이 버튼은 "그날 첫 동기화로 오늘 기록 화면을 채워주는"
- * 용도로만 쓴다.
+ * 하루가 아직 안 끝난 채로 보내는 거라 같은 날 여러 번 누를 수 있는데, 두 번째
+ * 부터는 [submitDailyRecord]가 기존 기록을 덮어쓴다 -- 누를 때마다 그 시점까지의
+ * 최신 측정값으로 오늘 기록이 갱신된다.
  */
 suspend fun syncTodayRecord(
     healthConnectManager: HealthConnectManager,
@@ -136,7 +142,7 @@ private suspend fun syncDailyRecord(
         onSubmitting(hasAnyRealData)
 
         val record = buildDailyRecordCreate(targetDate, zoneId, steps, sleepSessions, exerciseSessions)
-        val response = ApiClient.service.createDailyRecord("Bearer $token", record)
+        val response = submitDailyRecord(token, record)
 
         if (hasAnyRealData) {
             SyncResult.Success(response.date, response.steps, response.sleepMinutes)
@@ -144,11 +150,27 @@ private suspend fun syncDailyRecord(
             SyncResult.SuccessNoData(response.date)
         }
     } catch (e: HttpException) {
-        // 409 isn't really a failure from the user's point of view -- the
-        // backend enforces one record per user+date, so a repeat submission
-        // of an already-sent day is expected, not broken.
-        if (e.code() == 409) SyncResult.AlreadySubmitted else SyncResult.HttpFailure(e.code())
+        if (e.code() == 401) SyncResult.Unauthorized else SyncResult.HttpFailure(e.code())
     } catch (e: Exception) {
         SyncResult.Failure(e.message)
+    }
+}
+
+/**
+ * 하루치 기록을 만들고(POST), 그 날짜가 이미 있으면 덮어쓴다(PUT) -- 즉 upsert.
+ *
+ * 백엔드는 user+date에 유니크 제약이 있어서 이미 있는 날짜로 POST하면 409를
+ * 준다. 예전엔 그 409를 "이미 보냈음 = 정상 종료"로 처리했는데, 그러면 웹에서
+ * 먼저 만든 기록(건강 필드가 전부 null)이 하나만 있어도 그날 걸음/수면/운동이
+ * 영원히 서버에 올라가지 못했다. PUT은 전체 교체 semantics라 방금 만든 payload를
+ * 그대로 다시 보내면 되고, 실패하면 여기서 그대로 던져 호출부가 진짜 실패로
+ * 처리하게 둔다 (409를 성공으로 삼켜서 데이터 유실을 감추지 않는다).
+ */
+private suspend fun submitDailyRecord(token: String, record: DailyRecordCreate): DailyRecordRead {
+    return try {
+        ApiClient.service.createDailyRecord("Bearer $token", record)
+    } catch (e: HttpException) {
+        if (e.code() != 409) throw e
+        ApiClient.service.updateDailyRecord("Bearer $token", record.date, record)
     }
 }

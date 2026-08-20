@@ -38,15 +38,24 @@ class SyncWorker(
         // 로그인 전(#141)이면 보낼 계정이 없다 -- 권한 미승인과 같은 이유로
         // 일시적 오류가 아니라 "사용자가 로그인하기 전까지는 결과가 같은"
         // 상태라 조용히 건너뛴다.
-        val token = AuthStore(applicationContext).getToken() ?: return Result.success()
+        val authStore = AuthStore(applicationContext)
+        val token = authStore.getToken() ?: return Result.success()
 
         return when (val result = syncYesterdayRecord(manager, token)) {
             is SyncResult.Success,
-            is SyncResult.SuccessNoData,
-            SyncResult.AlreadySubmitted -> Result.success()
+            is SyncResult.SuccessNoData -> Result.success()
+
+            // 토큰 만료(백엔드 JWT TTL 30분)는 재시도로 못 푼다. 여기서 지우지
+            // 않으면 앱은 계속 "로그인됨"으로 보이면서 동기화만 조용히 실패하므로,
+            // 지워서 다음 앱 실행 때 로그인 화면이 다시 뜨게 한다. 지우는 순간
+            // AuthStore.tokenFlow가 흘러 화면 쪽(MainActivity)도 같이 따라온다.
+            SyncResult.Unauthorized -> {
+                authStore.clearToken()
+                Result.failure()
+            }
 
             // 5xx는 서버 쪽 일시 장애일 수 있으니 WorkManager의 백오프에 재시도를
-            // 맡긴다. 그 외 4xx(인증/유효성)는 같은 입력으로 재시도해도 같은 응답이다.
+            // 맡긴다. 그 외 4xx(유효성 등)는 같은 입력으로 재시도해도 같은 응답이다.
             is SyncResult.HttpFailure ->
                 if (result.code >= 500) Result.retry() else Result.failure()
 

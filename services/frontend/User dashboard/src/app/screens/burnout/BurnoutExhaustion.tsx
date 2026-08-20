@@ -1,7 +1,7 @@
 import { EXHAUSTION_QUESTIONS } from "../../../data/burnoutQuestions";
 import { BurnoutSubscaleScreen } from "./BurnoutSubscaleScreen";
 
-export function BurnoutExhaustion({ subStep, totalSubSteps, onNext }: { subStep: number; totalSubSteps: number; onNext: () => void }) {
+export function BurnoutExhaustion({ subStep, totalSubSteps, onNext }: { subStep: number; totalSubSteps: number; onNext: (answers: number[]) => void }) {
   return (
     <BurnoutSubscaleScreen
       nameKo="탈진"

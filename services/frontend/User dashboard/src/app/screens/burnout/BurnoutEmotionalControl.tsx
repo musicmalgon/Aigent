@@ -6,11 +6,16 @@ export function BurnoutEmotionalControl({
   totalSubSteps,
   onNext,
   onBack,
+  submitting,
+  notice,
 }: {
   subStep: number;
   totalSubSteps: number;
-  onNext: () => void;
+  onNext: (answers: number[]) => void;
   onBack: () => void;
+  /** 마지막 영역이라 여기서 4개 영역 결과를 한 번에 저장한다 */
+  submitting?: boolean;
+  notice?: string;
 }) {
   return (
     <BurnoutSubscaleScreen
@@ -22,6 +27,8 @@ export function BurnoutEmotionalControl({
       totalSubSteps={totalSubSteps}
       onNext={onNext}
       onBack={onBack}
+      submitting={submitting}
+      notice={notice}
     />
   );
 }

@@ -6,6 +6,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -19,6 +20,16 @@ interface ReMindApiService {
     @POST("/api/v1/behavioral-records")
     suspend fun createDailyRecord(
         @Header("Authorization") authorization: String,
+        @Body record: DailyRecordCreate,
+    ): DailyRecordRead
+
+    // 전체 교체(full replace)라 POST와 같은 DailyRecordCreate를 그대로 보낸다.
+    // 백엔드가 body의 date와 URL의 date가 다르면 422를 주므로 둘을 반드시 맞춰야 한다
+    // (services/backend/app/api/behavioral_records.py의 update_behavioral_record).
+    @PUT("/api/v1/behavioral-records/{recordDate}")
+    suspend fun updateDailyRecord(
+        @Header("Authorization") authorization: String,
+        @Path("recordDate") recordDate: String,
         @Body record: DailyRecordCreate,
     ): DailyRecordRead
 

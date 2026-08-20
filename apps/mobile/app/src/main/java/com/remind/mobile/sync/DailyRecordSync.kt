@@ -127,14 +127,15 @@ private suspend fun syncDailyRecord(
     return try {
         val steps = healthConnectManager.readStepsTotal(start, end)
         val sleepSessions = healthConnectManager.readSleepSessions(start, end)
+        val exerciseSessions = healthConnectManager.readExerciseSessions(start, end)
         // "no data for the day" is a real, valid state the backend needs to
         // see (it feeds the "생활데이터 부족" combined-signal case) -- so we
         // still submit rather than blocking, but say so up front instead of
         // silently sending an all-null record.
-        val hasAnyRealData = steps != null || sleepSessions.isNotEmpty()
+        val hasAnyRealData = steps != null || sleepSessions.isNotEmpty() || exerciseSessions.isNotEmpty()
         onSubmitting(hasAnyRealData)
 
-        val record = buildDailyRecordCreate(targetDate, zoneId, steps, sleepSessions)
+        val record = buildDailyRecordCreate(targetDate, zoneId, steps, sleepSessions, exerciseSessions)
         val response = ApiClient.service.createDailyRecord("Bearer $token", record)
 
         if (hasAnyRealData) {

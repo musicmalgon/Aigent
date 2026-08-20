@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
@@ -16,6 +17,7 @@ val HEALTH_CONNECT_PERMISSIONS = setOf(
     HealthPermission.getReadPermission(StepsRecord::class),
     HealthPermission.getReadPermission(SleepSessionRecord::class),
     HealthPermission.getReadPermission(HeartRateRecord::class),
+    HealthPermission.getReadPermission(ExerciseSessionRecord::class),
 )
 
 /**
@@ -86,6 +88,19 @@ class HealthConnectManager(private val context: Context) {
         return hcClient.readRecords(
             ReadRecordsRequest(
                 SleepSessionRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(start, end)
+            )
+        ).records
+    }
+
+    /** #146: 운동 시간(exercise_minutes) 채우는 데 씀 -- readSleepSessions와
+     *  같은 패턴, 하루에 여러 번 운동했을 수 있어서 세션들을 합산은
+     *  호출부(BehavioralRecordMapper)에서 한다. */
+    suspend fun readExerciseSessions(start: Instant, end: Instant): List<ExerciseSessionRecord> {
+        val hcClient = client ?: return emptyList()
+        return hcClient.readRecords(
+            ReadRecordsRequest(
+                ExerciseSessionRecord::class,
                 timeRangeFilter = TimeRangeFilter.between(start, end)
             )
         ).records

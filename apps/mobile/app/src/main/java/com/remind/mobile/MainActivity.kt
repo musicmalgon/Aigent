@@ -393,12 +393,14 @@ fun HealthConnectPocScreen(modifier: Modifier = Modifier, onBackToWebApp: () -> 
                     val steps = manager.readStepsTotal(start, end)
                     val sleepSessions = manager.readSleepSessions(start, end)
                     val heartRateRecords = manager.readHeartRateRecords(start, end)
+                    val exerciseSessions = manager.readExerciseSessions(start, end)
 
                     resultText = buildString {
                         append("최근 7일 걸음 수: ")
                         append(steps?.toString() ?: "데이터 없음 (0이 아니라 미수집)")
                         append("\n수면 세션: ${sleepSessions.size}건")
                         append("\n심박수 기록: ${heartRateRecords.size}건")
+                        append("\n운동 세션: ${exerciseSessions.size}건")
                     }
                 }
             },

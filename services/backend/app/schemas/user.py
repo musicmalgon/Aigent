@@ -66,6 +66,7 @@ class AccountDataDeletionSummaryRead(BaseModel):
     # 서비스 계층이 돌려주는 dataclass를 그대로 응답으로 검증하기 위한 설정.
     model_config = ConfigDict(from_attributes=True)
 
+    recovery_plan_items_deleted: int
     recovery_reports_deleted: int
     risk_evaluations_deleted: int
     baselines_deleted: int

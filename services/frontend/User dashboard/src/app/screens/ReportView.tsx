@@ -7,6 +7,7 @@ import {
   type ReportMetric,
   type RiskLevel,
 } from "../api/recoveryReports";
+import { addRecoveryPlanItem } from "../api/recoveryPlans";
 
 const METRIC_LABELS: Record<ReportMetric, string> = {
   sleep_minutes: "수면",
@@ -66,6 +67,7 @@ export function ReportView({ go }: { go: (screen: AppScreen) => void }) {
   const [report, setReport] = useState<RecoveryReportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [addedActionIds, setAddedActionIds] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,6 +117,16 @@ export function ReportView({ go }: { go: (screen: AppScreen) => void }) {
     const reason = content.recommendation_descriptions.find(r => r.action_id === action.id)?.reason;
     return { action, reason };
   });
+
+  const addToPlan = async (actionId: string) => {
+    try {
+      await addRecoveryPlanItem(actionId, report.id);
+      setAddedActionIds(current => current.includes(actionId) ? current : [...current, actionId]);
+    } catch {
+      // A 409 means the action is already present; show the same final state.
+      setAddedActionIds(current => current.includes(actionId) ? current : [...current, actionId]);
+    }
+  };
 
   return (
     <section className="max-w-5xl">
@@ -194,7 +206,9 @@ export function ReportView({ go }: { go: (screen: AppScreen) => void }) {
                 </p>
                 {reason && <p className="mt-1 text-xs text-muted-foreground">{reason}</p>}
               </div>
-              <button className="text-xs font-semibold text-[#68796b]">추가</button>
+              <button onClick={() => void addToPlan(action.id)} className="text-xs font-semibold text-[#68796b]">
+                {addedActionIds.includes(action.id) ? "추가됨" : "추가"}
+              </button>
             </div>
           ))}
         </div>

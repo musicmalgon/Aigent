@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         BehavioralDailyRecord,
         BurnoutRiskEvaluation,
         EmotionAnalysisResult,
+        RecoveryPlanItem,
         RecoveryReport,
     )
 
@@ -88,6 +89,11 @@ class User(Base):
         passive_deletes=True,
     )
     recovery_reports: Mapped[list[RecoveryReport]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    recovery_plan_items: Mapped[list[RecoveryPlanItem]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,

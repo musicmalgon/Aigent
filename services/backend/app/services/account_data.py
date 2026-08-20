@@ -19,12 +19,16 @@ from app.repositories.baselines import delete_all_baselines_for_user
 from app.repositories.behavioral_records import delete_all_daily_records_for_user
 from app.repositories.consent import delete_all_consent_records_for_user
 from app.repositories.emotion_results import delete_all_emotion_results_for_user
+from app.repositories.recovery_plan_items import (
+    delete_all_recovery_plan_items_for_user,
+)
 from app.repositories.recovery_reports import delete_all_recovery_reports_for_user
 from app.repositories.risk_evaluations import delete_all_risk_evaluations_for_user
 
 
 @dataclass(frozen=True)
 class AccountDataDeletionSummary:
+    recovery_plan_items_deleted: int
     recovery_reports_deleted: int
     risk_evaluations_deleted: int
     baselines_deleted: int
@@ -47,6 +51,10 @@ def delete_all_account_data(
     있다. 커밋은 호출자(API 계층)가 한다.
     """
 
+    recovery_plan_items = delete_all_recovery_plan_items_for_user(
+        session,
+        user_id=user.id,
+    )
     recovery_reports = delete_all_recovery_reports_for_user(
         session,
         user_id=user.id,
@@ -70,6 +78,7 @@ def delete_all_account_data(
     session.delete(user)
 
     return AccountDataDeletionSummary(
+        recovery_plan_items_deleted=recovery_plan_items,
         recovery_reports_deleted=recovery_reports,
         risk_evaluations_deleted=risk_evaluations,
         baselines_deleted=baselines,

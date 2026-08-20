@@ -612,6 +612,60 @@ class RecoveryReport(Base):
     )
 
 
+class RecoveryPlanItem(Base):
+    __tablename__ = "recovery_plan_items"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('planned', 'completed')",
+            name="ck_recovery_plan_item_status",
+        ),
+        CheckConstraint(
+            "length(trim(action_id)) > 0",
+            name="ck_recovery_plan_item_action_id_nonempty",
+        ),
+        CheckConstraint(
+            "length(trim(title)) > 0",
+            name="ck_recovery_plan_item_title_nonempty",
+        ),
+        Index(
+            "ix_recovery_plan_items_user_status_selected_at",
+            "user_id",
+            "status",
+            "selected_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_report_id: Mapped[str | None] = mapped_column(
+        ForeignKey("recovery_reports.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    action_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(100), nullable=False)
+    duration_minutes: Mapped[int | None] = mapped_column(Integer)
+    difficulty: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16),
+        default="planned",
+        server_default="planned",
+        nullable=False,
+    )
+    selected_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(),
+        default=_utc_now,
+        server_default=func.now(),
+        nullable=False,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+    user: Mapped[User] = relationship(back_populates="recovery_plan_items")
+    source_report: Mapped[RecoveryReport | None] = relationship()
+
+
 __all__ = [
     "BehavioralBaseline",
     "BehavioralDailyRecord",
@@ -620,4 +674,5 @@ __all__ = [
     "EmotionAnalysisResult",
     "PersistenceBaselineStatus",
     "RecoveryReport",
+    "RecoveryPlanItem",
 ]

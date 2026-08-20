@@ -11,6 +11,8 @@ from pydantic import SecretStr, ValidationError
 
 from .report_schemas import (
     PROMPT_VERSION,
+    RecoveryActionSelectionRequest,
+    RecoveryActionSelectionResponse,
     RecoveryReportCopy,
     RecoveryReportGenerationRequest,
     RecoveryReportGenerationResponse,
@@ -81,6 +83,13 @@ _COPY_SCHEMA: dict[str, Any] = {
             },
         },
     },
+}
+
+_ACTION_SELECTION_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "minItems": 1,
+    "maxItems": 3,
+    "items": {"type": "string"},
 }
 
 
@@ -232,6 +241,70 @@ class GeminiRecoveryReportGenerator:
             model_name=self._settings.model_name,
             prompt_version=request.prompt_version,
         )
+
+    async def select_actions(
+        self,
+        request: RecoveryActionSelectionRequest,
+    ) -> RecoveryActionSelectionResponse:
+        if self._settings.api_key is None:
+            raise RecoveryReportNotConfiguredError(
+                "Gemini action selection is not configured"
+            )
+        candidate_ids = {candidate.id for candidate in request.candidates}
+        prompt_payload = json.dumps(
+            request.model_dump(mode="json"),
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        system_instruction = (
+            "당신은 회복 행동 우선순위 선택기입니다. "
+            "후보 풀의 id 중에서만 1~3개를 우선순위 순서로 선택하세요. "
+            "설명, 마크다운, 새 id를 출력하지 말고 JSON 문자열 배열만 출력하세요."
+        )
+        encoded_model = quote(self._settings.model_name, safe="-_.")
+        url = f"{GEMINI_API_BASE_URL}/models/{encoded_model}:generateContent"
+        payload = {
+            "systemInstruction": {"parts": [{"text": system_instruction}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt_payload}]}],
+            "generationConfig": {
+                "temperature": 0.1,
+                "responseMimeType": "application/json",
+                "responseJsonSchema": _ACTION_SELECTION_SCHEMA,
+            },
+        }
+        try:
+            response = await self._client.post(
+                url,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": self._settings.api_key.get_secret_value(),
+                },
+                json=payload,
+                timeout=self._settings.timeout_seconds,
+            )
+            response.raise_for_status()
+            response_payload = response.json()
+            parts = response_payload["candidates"][0]["content"]["parts"]
+            raw_text = "".join(part["text"] for part in parts)
+            ids = json.loads(raw_text)
+            if (
+                not isinstance(ids, list)
+                or not 1 <= len(ids) <= 3
+                or len(set(ids)) != len(ids)
+                or any(not isinstance(item, str) or item not in candidate_ids for item in ids)
+            ):
+                raise ValueError("invalid recovery action ids")
+            return RecoveryActionSelectionResponse(ids=ids)
+        except (httpx.HTTPError, httpx.TimeoutException) as exc:
+            raise RecoveryReportGenerationError(
+                "Gemini recovery action selection request failed"
+            ) from exc
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise RecoveryReportGenerationError(
+                "Gemini returned invalid recovery action ids"
+            ) from exc
 
 
 __all__ = [

@@ -29,6 +29,7 @@ from app.services.recovery_reports import (
     RiskEvaluationNotFoundError,
     generate_recovery_report_copy,
     prepare_recovery_report,
+    select_recovery_actions_for_report,
     store_prepared_recovery_report,
 )
 
@@ -87,6 +88,10 @@ async def create_recovery_report(
     # before waiting on the AI service. Generation failures become templates.
     db.rollback()
     try:
+        prepared = await select_recovery_actions_for_report(
+            prepared,
+            ai_client=ai_client,
+        )
         content, generation_status, model_name = (
             await generate_recovery_report_copy(
                 prepared,

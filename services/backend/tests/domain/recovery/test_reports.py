@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date
 
 import pytest
@@ -11,7 +12,11 @@ from app.domain.recovery.models import (
     ReportFactorCode,
     ReportMetric,
 )
-from app.services.recovery_reports import build_template_fallback
+from app.services.recovery_reports import (
+    PreparedRecoveryReport,
+    build_template_fallback,
+    select_recovery_actions_for_report,
+)
 
 
 def request() -> RecoveryReportGenerationRequest:
@@ -73,8 +78,13 @@ def test_catalog_selection_is_deterministic_and_deduplicated() -> None:
     assert [action.id for action in actions] == [
         RecoveryActionId.SCHEDULE_REDUCE_ONE,
         RecoveryActionId.REST_30,
+        RecoveryActionId.LIGHT_ACTIVITY_20,
     ]
-    assert select_recovery_actions([])[0].id is RecoveryActionId.ROUTINE_CHECK_5
+    assert [action.id for action in select_recovery_actions([])] == [
+        RecoveryActionId.REST_30,
+        RecoveryActionId.LIGHT_ACTIVITY_20,
+        RecoveryActionId.ROUTINE_CHECK_5,
+    ]
 
 
 def test_stage2_signal_drivers_prioritize_matching_actions() -> None:
@@ -88,6 +98,82 @@ def test_stage2_signal_drivers_prioritize_matching_actions() -> None:
         RecoveryActionId.REST_30,
         RecoveryActionId.SLEEP_EARLY_60,
     ]
+
+
+class _SelectionClient:
+    def __init__(self, ids: list[str] | None = None, error: Exception | None = None):
+        self.ids = ids
+        self.error = error
+
+    async def select_recovery_actions(self, request: object) -> object:
+        del request
+        if self.error is not None:
+            raise self.error
+        return type("Selection", (), {"ids": self.ids or []})()
+
+
+def _prepared(
+    *,
+    provisional: bool = False,
+    data_quality: str = "sufficient",
+) -> PreparedRecoveryReport:
+    payload = request().model_copy(
+        update={"is_provisional": provisional, "data_quality": data_quality}
+    )
+    return PreparedRecoveryReport(
+        user_id="user-1",
+        risk_evaluation_id="evaluation-1",
+        request=payload,
+        input_snapshot="stable-source-snapshot",
+    )
+
+
+def test_missing_or_insufficient_report_uses_default_candidates() -> None:
+    prepared = asyncio.run(select_recovery_actions_for_report(
+        _prepared(provisional=True),
+        ai_client=_SelectionClient(error=AssertionError("must not call LLM")),
+    ))
+    assert [item.id for item in prepared.request.selected_actions] == [
+        RecoveryActionId.REST_30,
+        RecoveryActionId.LIGHT_ACTIVITY_20,
+        RecoveryActionId.ROUTINE_CHECK_5,
+    ]
+
+
+def test_valid_llm_selection_is_mapped_in_order() -> None:
+    prepared = asyncio.run(select_recovery_actions_for_report(
+        _prepared(),
+        ai_client=_SelectionClient(
+            ids=["sleep_prep_routine", "rest_30min", "step_away_5min"]
+        ),
+    ))
+    assert [item.id for item in prepared.request.selected_actions] == [
+        RecoveryActionId.SLEEP_EARLY_60,
+        RecoveryActionId.REST_30,
+        RecoveryActionId.STEP_AWAY_5,
+    ]
+
+
+@pytest.mark.parametrize(
+    "ids",
+    [["not_in_pool"], ["rest_30min"] * 4, []],
+)
+def test_invalid_llm_selection_uses_default_fallback(ids: list[str]) -> None:
+    prepared = asyncio.run(select_recovery_actions_for_report(
+        _prepared(),
+        ai_client=_SelectionClient(ids=ids),
+    ))
+    assert len(prepared.request.selected_actions) == 3
+    assert prepared.request.selected_actions[0].id is RecoveryActionId.SLEEP_EARLY_60
+
+
+def test_llm_timeout_or_error_uses_default_fallback() -> None:
+    prepared = asyncio.run(select_recovery_actions_for_report(
+        _prepared(),
+        ai_client=_SelectionClient(error=TimeoutError("selection timed out")),
+    ))
+    assert len(prepared.request.selected_actions) == 3
+    assert prepared.request.selected_actions[0].id is RecoveryActionId.SLEEP_EARLY_60
 
 
 def test_template_fallback_preserves_factors_and_action_ids() -> None:

@@ -126,6 +126,27 @@ class RecoveryReportGenerationRequest(_ReportModel):
         return self
 
 
+class RecoveryActionCandidate(_ReportModel):
+    id: Annotated[str, Field(min_length=1, max_length=64)]
+    label: Annotated[str, Field(min_length=1, max_length=100)]
+    description: Annotated[str, Field(min_length=1, max_length=320)]
+    signals: list[Annotated[str, Field(min_length=1, max_length=32)]]
+
+
+class RecoveryActionSelectionRequest(_ReportModel):
+    candidates: Annotated[list[RecoveryActionCandidate], Field(min_length=1)]
+    stage2_signals: list[Annotated[str, Field(min_length=1, max_length=32)]] = Field(default_factory=list)
+    factor_codes: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(default_factory=list)
+    risk_level: Annotated[str, Field(min_length=1, max_length=32)]
+    risk_score: Annotated[JsonNumber, Field(ge=0, le=100)]
+    data_quality: Annotated[str, Field(min_length=1, max_length=32)]
+    is_provisional: StrictBool
+
+
+class RecoveryActionSelectionResponse(_ReportModel):
+    ids: Annotated[list[Annotated[str, Field(min_length=1, max_length=64)]], Field(min_length=1, max_length=3)]
+
+
 class RecoveryChangedItem(_ReportModel):
     factor_code: ReportFactorCode
     title: Annotated[str, Field(min_length=1, max_length=100)]
@@ -170,7 +191,10 @@ class RecoveryReportGenerationResponse(RecoveryReportCopy):
 __all__ = [
     "PROMPT_VERSION",
     "RecoveryAction",
+    "RecoveryActionCandidate",
     "RecoveryActionId",
+    "RecoveryActionSelectionRequest",
+    "RecoveryActionSelectionResponse",
     "RecoveryChangedItem",
     "RecoveryRecommendationDescription",
     "RecoveryReportChange",

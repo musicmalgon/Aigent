@@ -6,6 +6,15 @@
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <!--
+        #146: HealthConnectManager의 HEALTH_CONNECT_PERMISSIONS에 코틀린
+        코드로 추가하는 것만으로는 부족하다. 매니페스트에도 따로 선언해야
+        시스템이 이 권한을 요청 가능한 목록에 넣어준다. 이걸 빼먹으면
+        permissionLauncher.launch()가 다이얼로그 없이 조용히 그냥
+        닫혀버려서(승인/거부 어느 쪽도 아님) 버튼을 눌러도 권한이 영원히
+        "필요" 상태로 남는다. 겪어본 실수라 남겨둠.
+    -->
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <!--
         앱이 포그라운드가 아닐 때의 Health Connect 읽기를 허용하는 별도 권한.
         위 READ_* 권한이 승인돼 있어도 이게 없으면 백그라운드 동기화 시점의
         읽기는 실패한다. 요청 자체도 포그라운드 권한 승인 이후 별도 단계로

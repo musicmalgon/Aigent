@@ -103,6 +103,13 @@ export async function getBehavioralRecordByDate(
   }
 }
 
+// 해당 날짜 기록이 없으면 404.
+export async function deleteBehavioralRecord(recordDate: string): Promise<void> {
+  await apiFetch<null>(`/api/v1/behavioral-records/${recordDate}`, {
+    method: "DELETE",
+  });
+}
+
 // 범위 없이 호출하면 최근 14일(UTC), 범위 지정 시 최대 28일까지, 최신순 정렬로 옴
 export async function getBehavioralRecordsRange(
   dateFrom?: string,

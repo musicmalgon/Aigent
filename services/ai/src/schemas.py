@@ -548,6 +548,95 @@ class CoarseEmotionInput(_SchemaModel):
         return _normalize_utterance(value, optional=True)
 
 
+class BurnoutSignalLabel(str, Enum):
+    """Independent, non-diagnostic Stage 2 pattern signals."""
+
+    EXHAUSTION = "exhaustion"
+    OVERLOAD = "overload"
+    HELPLESSNESS = "helplessness"
+    LOW_EFFICACY = "low_efficacy"
+    ANXIETY = "anxiety"
+    IRRITABILITY = "irritability"
+
+
+BURNOUT_SIGNAL_LABELS = tuple(BurnoutSignalLabel)
+
+
+class BurnoutSignalState(str, Enum):
+    PRESENT = "present"
+    ABSENT = "absent"
+    UNVALIDATED = "unvalidated"
+
+
+class BurnoutSignalInferenceResponse(_SchemaModel):
+    """Six independent probabilities that never feed the risk score directly."""
+
+    taxonomy_version: Literal["stage2-burnout-signals-v1"]
+    model_version: NonEmptyString
+    threshold_version: NonEmptyString
+    probabilities: Annotated[
+        dict[BurnoutSignalLabel, Confidence],
+        Field(min_length=6, max_length=6),
+    ]
+    thresholds: Annotated[
+        dict[BurnoutSignalLabel, Confidence],
+        Field(min_length=6, max_length=6),
+    ]
+    signal_states: Annotated[
+        dict[BurnoutSignalLabel, BurnoutSignalState],
+        Field(min_length=6, max_length=6),
+    ]
+    active_signals: list[BurnoutSignalLabel]
+    validated_signals: list[BurnoutSignalLabel]
+    deployment_status: Literal["shadow_only", "partial", "validated"]
+    informational_only: Literal[True]
+    risk_score_eligible: Literal[False]
+    latency_ms: NonNegativeFloat
+
+    @model_validator(mode="after")
+    def validate_signal_consistency(self) -> BurnoutSignalInferenceResponse:
+        expected = set(BURNOUT_SIGNAL_LABELS)
+        if set(self.probabilities) != expected:
+            raise ValueError("probabilities must contain exactly six burnout signals")
+        if set(self.thresholds) != expected:
+            raise ValueError("thresholds must contain exactly six burnout signals")
+        if set(self.signal_states) != expected:
+            raise ValueError("signal_states must contain exactly six burnout signals")
+        if len(self.active_signals) != len(set(self.active_signals)):
+            raise ValueError("active_signals must not contain duplicates")
+        if len(self.validated_signals) != len(set(self.validated_signals)):
+            raise ValueError("validated_signals must not contain duplicates")
+
+        validated = set(self.validated_signals)
+        active = set(self.active_signals)
+        if not active <= validated:
+            raise ValueError("active signals must be independently validated")
+        for label in BURNOUT_SIGNAL_LABELS:
+            state = self.signal_states[label]
+            if label not in validated:
+                if state is not BurnoutSignalState.UNVALIDATED:
+                    raise ValueError("unvalidated signals must use unvalidated state")
+                continue
+            expected_state = (
+                BurnoutSignalState.PRESENT
+                if self.probabilities[label] >= self.thresholds[label]
+                else BurnoutSignalState.ABSENT
+            )
+            if state is not expected_state:
+                raise ValueError("signal state does not match its calibrated threshold")
+            if (label in active) != (state is BurnoutSignalState.PRESENT):
+                raise ValueError("active_signals must match present signal states")
+
+        expected_deployment = (
+            "validated"
+            if len(validated) == len(BURNOUT_SIGNAL_LABELS)
+            else "partial" if validated else "shadow_only"
+        )
+        if self.deployment_status != expected_deployment:
+            raise ValueError("deployment_status does not match validated signals")
+        return self
+
+
 class CoarseEmotionTopPrediction(_SchemaModel):
     emotion: CoarseEmotionLabel
     label_id: Annotated[JsonInteger, Field(ge=0, le=5)]
@@ -964,6 +1053,7 @@ class CombinedSignalResult(_SchemaModel):
 
 
 __all__ = [
+    "BURNOUT_SIGNAL_LABELS",
     "AssessmentAnchor",
     "AssessmentDimension",
     "AssessmentType",
@@ -971,6 +1061,9 @@ __all__ = [
     "BehavioralBaseline",
     "BehavioralDailyRecord",
     "BehavioralMetric",
+    "BurnoutSignalInferenceResponse",
+    "BurnoutSignalLabel",
+    "BurnoutSignalState",
     "CauseTag",
     "ChangeDirection",
     "ChangeLevel",

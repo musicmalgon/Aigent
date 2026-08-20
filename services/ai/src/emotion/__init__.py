@@ -16,6 +16,10 @@ from .base import (
     PredictionExecutionError,
     PredictionOutputError,
 )
+from .burnout_signals import (
+    BurnoutSignalSettings,
+    BurnoutSignalTransformerAnalyzer,
+)
 from .coarse_settings import CoarseEmotionSettings, NeutralGateSettings
 from .coarse_transformer import CoarseTransformerEmotionAnalyzer
 from .gated_analyzer import NeutralGatedEmotionAnalyzer
@@ -24,6 +28,8 @@ from .tfidf_analyzer import TFIDFEmotionAnalyzer, TfidfEmotionAnalyzer
 from .transformer_analyzer import TransformerEmotionAnalyzer
 
 __all__ = [
+    "BurnoutSignalSettings",
+    "BurnoutSignalTransformerAnalyzer",
     "CoarseEmotionSettings",
     "CoarseTransformerEmotionAnalyzer",
     "EmotionAnalyzer",

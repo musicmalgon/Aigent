@@ -36,6 +36,7 @@ from app.domain.recovery.models import (
 LOGGER = logging.getLogger(__name__)
 
 CLASSIFY_ENDPOINT = "v2/emotions/classify"
+BURNOUT_SIGNALS_ENDPOINT = "v1/burnout-signals/analyze"
 REPORT_ENDPOINT = "v1/recovery-reports/generate"
 LIVENESS_ENDPOINT = "health/live"
 READINESS_ENDPOINT = "health/ready"
@@ -284,6 +285,85 @@ class CoarseEmotionResponse(_WireModel):
         return self
 
 
+class BurnoutSignalLabel(StrEnum):
+    EXHAUSTION = "exhaustion"
+    OVERLOAD = "overload"
+    HELPLESSNESS = "helplessness"
+    LOW_EFFICACY = "low_efficacy"
+    ANXIETY = "anxiety"
+    IRRITABILITY = "irritability"
+
+
+BURNOUT_SIGNAL_LABELS = tuple(BurnoutSignalLabel)
+
+
+class BurnoutSignalState(StrEnum):
+    PRESENT = "present"
+    ABSENT = "absent"
+    UNVALIDATED = "unvalidated"
+
+
+class BurnoutSignalResponse(_WireModel):
+    taxonomy_version: Literal["stage2-burnout-signals-v1"]
+    model_version: NonEmptyString
+    threshold_version: NonEmptyString
+    probabilities: Annotated[
+        dict[BurnoutSignalLabel, Probability], Field(min_length=6, max_length=6)
+    ]
+    thresholds: Annotated[
+        dict[BurnoutSignalLabel, Probability], Field(min_length=6, max_length=6)
+    ]
+    signal_states: Annotated[
+        dict[BurnoutSignalLabel, BurnoutSignalState], Field(min_length=6, max_length=6)
+    ]
+    active_signals: list[BurnoutSignalLabel]
+    validated_signals: list[BurnoutSignalLabel]
+    deployment_status: Literal["shadow_only", "partial", "validated"]
+    informational_only: Literal[True]
+    risk_score_eligible: Literal[False]
+    latency_ms: NonNegativeFloat
+
+    @model_validator(mode="after")
+    def validate_signal_consistency(self) -> BurnoutSignalResponse:
+        expected = set(BURNOUT_SIGNAL_LABELS)
+        if any(
+            set(values) != expected
+            for values in (self.probabilities, self.thresholds, self.signal_states)
+        ):
+            raise ValueError("all signal maps must contain exactly six labels")
+        if len(self.active_signals) != len(set(self.active_signals)) or len(
+            self.validated_signals
+        ) != len(set(self.validated_signals)):
+            raise ValueError("signal lists must not contain duplicates")
+        active = set(self.active_signals)
+        validated = set(self.validated_signals)
+        if not active <= validated:
+            raise ValueError("active signals must be validated")
+        for label in BURNOUT_SIGNAL_LABELS:
+            state = self.signal_states[label]
+            if label not in validated:
+                if state is not BurnoutSignalState.UNVALIDATED:
+                    raise ValueError("unvalidated signals require unvalidated state")
+                continue
+            expected_state = (
+                BurnoutSignalState.PRESENT
+                if self.probabilities[label] >= self.thresholds[label]
+                else BurnoutSignalState.ABSENT
+            )
+            if state is not expected_state or (
+                label in active
+            ) != (state is BurnoutSignalState.PRESENT):
+                raise ValueError("signal state is inconsistent")
+        expected_status = (
+            "validated"
+            if len(validated) == len(BURNOUT_SIGNAL_LABELS)
+            else "partial" if validated else "shadow_only"
+        )
+        if self.deployment_status != expected_status:
+            raise ValueError("deployment status is inconsistent")
+        return self
+
+
 class LivenessResponse(_WireModel):
     status: Literal["ok"]
 
@@ -494,6 +574,19 @@ class AIServiceClient:
             CLASSIFY_ENDPOINT,
             request_model=request,
             response_model=CoarseEmotionResponse,
+            expected_statuses={200},
+        )
+        return result
+
+    async def analyze_burnout_signals(
+        self,
+        request: CoarseEmotionRequest,
+    ) -> BurnoutSignalResponse:
+        result, _ = await self._request_model(
+            "POST",
+            BURNOUT_SIGNALS_ENDPOINT,
+            request_model=request,
+            response_model=BurnoutSignalResponse,
             expected_statuses={200},
         )
         return result
@@ -750,6 +843,10 @@ __all__ = [
     "AIServiceResponseValidationError",
     "AIServiceServerResponseError",
     "AIServiceTimeoutError",
+    "BURNOUT_SIGNALS_ENDPOINT",
+    "BurnoutSignalLabel",
+    "BurnoutSignalResponse",
+    "BurnoutSignalState",
     "CoarseEmotionLabel",
     "CoarseEmotionRequest",
     "CoarseEmotionResponse",

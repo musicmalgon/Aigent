@@ -15,6 +15,8 @@ from app.clients.ai import (
     AIServiceConnectionError,
     AIServiceError,
     AIServiceTimeoutError,
+    BurnoutSignalResponse,
+    CoarseEmotionRequest,
 )
 from app.core.database import get_db
 from app.models.consent import ConsentType
@@ -164,6 +166,24 @@ def read_latest_emotion_analysis(
             detail="No emotion analysis results found.",
         )
     return to_emotion_analysis_read(result)
+
+
+@router.post(
+    "/burnout-signals/analyze",
+    response_model=BurnoutSignalResponse,
+    summary="Return informational-only Stage 2 pattern signals",
+)
+async def analyze_burnout_signals(
+    payload: CoarseEmotionRequest,
+    _current_user: User = Depends(require_consent(ConsentType.EMOTION_DIARY)),
+    ai_client: AIServiceClient = Depends(get_ai_service_client),
+) -> BurnoutSignalResponse:
+    """Proxy calibrated signals without persisting or changing risk scores."""
+
+    try:
+        return await ai_client.analyze_burnout_signals(payload)
+    except AIServiceError as exc:
+        raise _downstream_error(exc) from exc
 
 
 @router.get("/{result_id}", response_model=EmotionAnalysisRead)

@@ -11,6 +11,8 @@ import {
   type NullableMetricKey,
 } from "../api/behavioralRecords";
 import { createEmotionAnalysis, type EmotionAnalysisRead } from "../api/emotionAnalyses";
+import { createRiskEvaluation } from "../api/riskEvaluations";
+import { createRecoveryReport } from "../api/recoveryReports";
 
 function todayDateString() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
@@ -40,6 +42,7 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
   const [step, setStep] = useState(1);
   const [saved, setSaved] = useState(false);
   const [emotionResult, setEmotionResult] = useState<EmotionAnalysisRead | null>(null);
+  const [reportNotice, setReportNotice] = useState<string | null>(null);
 
   const [minuteValues, setMinuteValues] = useState<Record<MinuteField, number | null>>({
     sleep_minutes: null,
@@ -209,6 +212,15 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
         hs03: hs03.trim().length > 0 ? hs03 : null,
       });
       setEmotionResult(result);
+      try {
+        const riskEvaluation = await createRiskEvaluation(todayDateString());
+        await createRecoveryReport(riskEvaluation.id);
+        setReportNotice("생활 리포트와 회복 추천도 준비했어요.");
+      } catch {
+        // The diary is already saved. A missing baseline or incomplete data
+        // should not make the successful diary submission look like a failure.
+        setReportNotice("기록은 저장했어요. 생활 리포트는 데이터가 더 쌓이면 준비할게요.");
+      }
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "감정 분석 저장 중 오류가 발생했습니다.");
@@ -242,6 +254,7 @@ export function RecordView({ go, editing = false }: { go: (screen: AppScreen) =>
             이번 분석은 확신도가 낮아 참고용으로만 봐주세요.
           </p>
         )}
+        {reportNotice && <p className="mt-4 text-xs text-muted-foreground">{reportNotice}</p>}
         <div className="mt-8 flex flex-wrap gap-5">
           <TextButton onClick={() => go("home")}>홈으로 돌아가기</TextButton>
         </div>

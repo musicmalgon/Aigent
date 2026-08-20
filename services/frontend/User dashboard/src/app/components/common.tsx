@@ -18,10 +18,18 @@ export function NoteMark() {
   return <span className="ml-1 inline-block h-[5px] w-14 -rotate-1 border-t-2 border-[#d9a17d] align-middle" />;
 }
 
-export function Tag({ children, tone = "sage" }: { children: ReactNode; tone?: "sage" | "ochre" }) {
+const TAG_TONES = {
+  sage: { text: "text-[#5a7160]", dot: "bg-[#738a77]" },
+  ochre: { text: "text-[#896d36]", dot: "bg-[#b89a59]" },
+  // 위험도 "경고" 등 붉은 계열 경고를 표시할 때 쓴다 -- 계정 삭제(#8d5541)와
+  // 같은 색으로, 이 앱에서 이미 "위험/주의"를 뜻하는 색이다.
+  clay: { text: "text-[#8d5541]", dot: "bg-[#a25a45]" },
+} as const;
+
+export function Tag({ children, tone = "sage" }: { children: ReactNode; tone?: keyof typeof TAG_TONES }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${tone === "sage" ? "text-[#5a7160]" : "text-[#896d36]"}`}>
-      <span className={`size-1.5 rounded-full ${tone === "sage" ? "bg-[#738a77]" : "bg-[#b89a59]"}`} />
+    <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${TAG_TONES[tone].text}`}>
+      <span className={`size-1.5 rounded-full ${TAG_TONES[tone].dot}`} />
       {children}
     </span>
   );
@@ -157,9 +165,11 @@ export function OnboardingFrame({
   );
 }
 
-/** 리커트 척도(5점) 선택 컴포넌트 - 번아웃 문항 등에서 재사용 */
+/** 리커트 척도(5점) 선택 컴포넌트 - 번아웃 문항 등에서 재사용.
+ *  onChange(v)의 v는 0-based 선택 인덱스다 -- 실제 1~5점 원점수로 바꾸는
+ *  것은 호출부(예: BurnoutFlow의 subscaleScore)의 몫이다. */
 export const LIKERT_SIZES = [30, 24, 16, 24, 30];
-export const LIKERT_LABELS = ["매우\n그렇다", "그렇다", "중립", "아니다", "전혀\n아니다"];
+export const LIKERT_LABELS = ["전혀\n그렇지 않다", "그렇지\n않다", "보통이다", "그렇다", "항상\n그렇다"];
 
 export function LikertScale({ value, onChange }: { value: number | null; onChange: (v: number) => void }) {
   return (
@@ -171,7 +181,7 @@ export function LikertScale({ value, onChange }: { value: number | null; onChang
             <button
               key={i}
               onClick={() => onChange(i)}
-              aria-label={LIKERT_LABELS[i].replace("\n", " ")}
+              aria-label={`${i + 1}점 · ${LIKERT_LABELS[i].replace("\n", " ")}`}
               style={{ width: size, height: size, minWidth: size, flexShrink: 0 }}
               className={`rounded-full border-2 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#68796b] focus-visible:ring-offset-1 ${
                 sel ? "border-[#68796b] bg-[#68796b]" : "border-[#c5bfb5] bg-transparent hover:border-[#8fa893]"
@@ -181,8 +191,8 @@ export function LikertScale({ value, onChange }: { value: number | null; onChang
         })}
       </div>
       <div className="mt-2.5 flex justify-between">
-        <span className="text-[10px] text-muted-foreground">그렇다</span>
-        <span className="text-[10px] text-muted-foreground">그렇지 않다</span>
+        <span className="text-[10px] text-muted-foreground">전혀 그렇지 않다</span>
+        <span className="text-[10px] text-muted-foreground">항상 그렇다</span>
       </div>
     </div>
   );

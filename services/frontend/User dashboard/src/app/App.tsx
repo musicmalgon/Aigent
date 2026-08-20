@@ -15,6 +15,7 @@ import { Mode } from "../app/screens/Mode";
 import { BurnoutFlow } from "../app/screens/burnout/BurnoutFlow";
 import { Survey } from "../app/screens/Survey";
 import { SurveyResult } from "../app/screens/SurveyResult";
+import { BurnoutResultView } from "./screens/BurnoutResultView";
 import { HomeView } from "./screens/HomeView";
 import { RecordView } from "./screens/RecordView";
 import { PastView } from "./screens/PastView";
@@ -144,6 +145,7 @@ export default function App() {
     burnout: <BurnoutFlow go={go} mode={onboardMode} />,
     survey: <Survey go={go} mode={onboardMode} onComplete={setOnboardingDimensions} />,
     result: <SurveyResult go={go} dimensions={onboardingDimensions} />,
+    burnoutResult: <BurnoutResultView go={go} />,
     home: <HomeView go={go} openRecord={() => openRecordOverlay()} />,
     record: <RecordView go={go} />,
     past: <PastView go={go} openRecord={date => openRecordOverlay(date)} />,

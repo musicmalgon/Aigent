@@ -17,10 +17,17 @@ const SUBSCALE_DIMENSIONS: Record<BurnoutSubscale["key"], DimensionKey> = {
   "emotional-control": "emotional_control",
 };
 
-/** 리커트 0(매우 그렇다)~4(전혀 아니다)를 번아웃 강도 0~1로 뒤집어 평균낸다.
- *  문항이 전부 번아웃 증상 진술이라 "그렇다"에 가까울수록 점수가 높아야 한다. */
+// BurnoutFlow가 저장하는 K-BAT 결과의 채점 버전. 리커트 원점수(1~5)를 그대로
+// 평균 내는 이 버전과, 예전에 0~1 소진 강도로 반전 환산하던 버전("onboarding_kbat_v1")은
+// 척도 자체가 다르다 -- 서버(app/services/kbat_result.py의 KBAT_SURVEY_SOURCE)가
+// 이 값과 정확히 일치하는 응답만 최종 결과 계산에 쓰므로, 기존 사용자의 옛
+// 응답이 새 채점 로직에 섞여 들어가지 않는다.
+const KBAT_SURVEY_SOURCE = "onboarding_kbat_v2";
+
+/** LikertScale이 넘기는 0-based 선택 인덱스(0~4)를 리커트 원점수(1~5)로
+ *  바꿔 평균낸다. 1=전혀 그렇지 않다 ~ 5=항상 그렇다. */
 function subscaleScore(answers: number[]): number {
-  return answers.reduce((sum, value) => sum + (4 - value) / 4, 0) / answers.length;
+  return answers.reduce((sum, index) => sum + (index + 1), 0) / answers.length;
 }
 
 /**
@@ -69,7 +76,7 @@ export function BurnoutFlow({ go, mode }: { go: (screen: AppScreen) => void; mod
           target_group: targetGroup,
           completed_at: new Date().toISOString(),
           dimensions,
-          source: "onboarding_kbat_v1",
+          source: KBAT_SURVEY_SOURCE,
         });
       }
       goNextScreen();

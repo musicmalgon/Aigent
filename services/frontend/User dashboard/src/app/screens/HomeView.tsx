@@ -162,6 +162,9 @@ export function HomeView({ go, openRecord }: { go: (screen: AppScreen) => void; 
           <p className="mt-5 max-w-xl text-[14px] leading-7 text-muted-foreground">{copy.body}</p>
           <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
             {latest_report && <TextButton onClick={() => go("report")}>왜 달라졌는지 보기</TextButton>}
+            <button onClick={() => go("burnoutResult")} className="text-sm text-muted-foreground underline underline-offset-4">
+              번아웃 자가진단 결과 보기
+            </button>
             {record_status.today_recorded && (
               <button onClick={openRecord} className="text-sm text-muted-foreground underline underline-offset-4">
                 오늘 기록 다시 보기

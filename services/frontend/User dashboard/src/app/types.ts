@@ -10,6 +10,7 @@ export type AppScreen =
   | "burnout"
   | "survey"
   | "result"
+  | "burnoutResult"
   | "home"
   | "record"
   | "past"

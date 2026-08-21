@@ -62,6 +62,10 @@ env/
 .env.*
 !.env.example
 
+# Node.js
+node_modules/
+dist/
+
 # Editor and local files
 .idea/
 .vscode/

@@ -19,23 +19,14 @@ import {
   createEmotionAnalysis,
   type EmotionAnalysisRead,
 } from "../api/emotionAnalyses";
+import { APP_TIME_ZONE, todayDateString, yesterdayDateString } from "../lib/date";
 
-function todayDateString() {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-}
-
-// 어제 날짜 -- baseline의 window_end로 쓴다. risk evaluation은 "baseline의
-// window_end가 평가일보다 앞서야" 평소 기준으로 인정한다(app/services/risk_evaluation.py의
-// `baseline.window_end >= record_date`면 못 찾은 것으로 취급). baseline을
-// 오늘 날짜로 계산하면 오늘 자신을 자기 자신의 평소 기준에 포함시키는 셈이
-// 되어 매번 거부된다.
-function yesterdayDateString() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
-const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+// behavioral-records 요청에 실어 보내는 time_zone -- 날짜 문자열(todayDateString
+// 등, lib/date.ts)과 항상 같은 기준(KST)이어야 한다. 예전엔 이 값을 브라우저
+// 로케일(Intl.DateTimeFormat().resolvedOptions().timeZone)에서 가져오면서
+// 날짜 자체는 UTC로 계산해서, 자정~오전 9시(KST) 사이엔 오늘 남긴 기록이
+// 조용히 "어제" 날짜로 저장됐다(#H7).
+const TIME_ZONE = APP_TIME_ZONE;
 
 type MinuteField =
   | "sleep_minutes"

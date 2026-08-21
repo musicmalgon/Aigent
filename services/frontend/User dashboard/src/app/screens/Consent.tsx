@@ -11,11 +11,11 @@ const CONSENT_ITEMS: [string, string][] = [
   ["선택적 외부 서비스 연동 동의", "선택"],
 ];
 
-// 화면 체크박스 인덱스 -> 백엔드 ConsentType 매핑. 예전엔 health_data /
-// emotion_diary 두 종류만 서버로 보내고 나머지 3개(이용약관/개인정보/외부연동)는
-// 화면 체크 상태로만 관리해서, 동의내역 화면이 사용자의 실제 선택과 무관하게
-// 이 3개를 항상 "가입 시 동의"라고 표시했다 -- 특히 선택 항목(4번)은 체크
-// 안 해도 그렇게 보여서 실제 선택과 정반대였다(#H1). 이제 5개 전부 저장한다.
+// 화면 체크박스 인덱스 -> 백엔드 ConsentType 매핑.
+// 예전에는 health_data/emotion_diary 두 종류만 있어서 나머지 3개 항목은
+// 체크해도 서버로 전달되지 않고 사라졌다(다음 화면으로 넘어가는 순간
+// 유실). ConsentType에 terms_of_service/privacy_policy/external_integration을
+// 추가해 5개 항목 전부 실제 동의 이력으로 남긴다.
 const CONSENT_TYPE_MAP: Record<number, ConsentType> = {
   0: "terms_of_service",
   1: "privacy_policy",
@@ -37,6 +37,10 @@ export function Consent({ go, openDetail }: { go: (screen: AppScreen) => void; o
     setError(null);
     setLoading(true);
     try {
+      // 체크된 항목만 골라 각 항목의 실제 동의 상태(항목 ID + 체크 여부)를
+      // 검증한 뒤 백엔드로 보낸다. 선택 항목(외부 연동)은 체크 안 했으면
+      // 아예 요청을 보내지 않는다 -- "미동의"를 표현하려고 굳이 철회
+      // 이력을 미리 만들 필요는 없다.
       const requests = Object.entries(CONSENT_TYPE_MAP)
         .filter(([index]) => items[Number(index)])
         .map(([, consentType]) => grantConsent(consentType));

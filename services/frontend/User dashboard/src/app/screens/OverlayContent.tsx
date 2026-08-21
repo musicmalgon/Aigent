@@ -19,12 +19,19 @@ const CONSENT_ITEM_TYPE_MAP: Record<string, ConsentType> = {
   "선택적 외부 서비스 연동 동의": "external_integration",
 };
 
-// 철회하면 실제로 못 쓰게 되는 기능이 있는 항목만 경고 문구를 보여준다.
-// 이용약관/개인정보/외부연동은 철회해도 백엔드에 아무 기능 게이트가 없어서
-// (require_consent가 걸린 건 health_data, emotion_diary뿐) 여기에 넣지 않는다.
-const CONSENT_WITHDRAWAL_IMPACT: Partial<Record<ConsentType, string>> = {
+// 서비스 이용약관/개인정보 수집은 서비스 이용 자체의 전제조건이라 철회를
+// 허용하지 않는다 -- app/api/consents.py의 NON_WITHDRAWABLE_CONSENT_TYPES와
+// 같은 규칙을 프론트에서도 지켜서, 백엔드가 403으로 막기 전에 애초에
+// 철회 버튼 자체를 다르게 보여준다(호출 자체는 백엔드가 최종적으로 막음).
+// 나머지(건강 데이터 활용/마음 기록 분석/외부 연동)는 언제든 자유롭게
+// 껐다 켤 수 있다.
+const NON_WITHDRAWABLE_CONSENT_TYPES = new Set<ConsentType>(["terms_of_service", "privacy_policy"]);
+
+// 철회 시 어떤 기능을 못 쓰게 되는지 -- 철회 가능한 항목에만 있으면 된다.
+const CONSENT_WITHDRAW_IMPACT: Partial<Record<ConsentType, string>> = {
   health_data: "일상기록 저장",
   emotion_diary: "마음 기록 분석",
+  external_integration: "외부 서비스 자동 연동",
 };
 
 function formatConsentDate(iso: string): string {
@@ -248,6 +255,12 @@ export function OverlayContent({
   // 표시할 뿐 실제로 철회/재동의하는 UI가 없었다.
   async function handleToggleConsent(consentType: ConsentType, currentlyGranted: boolean) {
     setConsentActionError(null);
+    if (currentlyGranted && NON_WITHDRAWABLE_CONSENT_TYPES.has(consentType)) {
+      // 백엔드도 이 항목의 철회 요청을 403으로 막지만, 굳이 요청을
+      // 보내지 않고 바로 안내한다.
+      setConsentActionError("이 동의 항목은 철회할 수 없어요.");
+      return;
+    }
     setConsentActionType(consentType);
     try {
       const updated = currentlyGranted
@@ -401,25 +414,33 @@ export function OverlayContent({
           ] as const
         ).map(([x, requiredLabel]) => {
           const consentType = CONSENT_ITEM_TYPE_MAP[x];
-          const record = consentType ? consentRecords.find(r => r.consent_type === consentType) : undefined;
-          const granted = record?.status === "granted";
-          const statusLabel = granted
-            ? `${requiredLabel} · ${formatConsentDate(record.granted_at)}`
-            : `${requiredLabel} · 동의 안 함`;
-          const withdrawalImpact = consentType && CONSENT_WITHDRAWAL_IMPACT[consentType];
+          const record = consentRecords.find(r => r.consent_type === consentType);
+          const granted = Boolean(record && record.status === "granted");
+          const locked = NON_WITHDRAWABLE_CONSENT_TYPES.has(consentType);
+          const impact = CONSENT_WITHDRAW_IMPACT[consentType];
+          const statusLabel =
+            record && record.status === "granted"
+              ? `${requiredLabel} · ${formatConsentDate(record.granted_at)}`
+              : `${requiredLabel} · 동의 안 함`;
           return (
             <div className="flex items-center justify-between gap-4 py-4" key={x}>
               <div>
                 <p className="text-sm">{x}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{statusLabel}</p>
-                {granted && withdrawalImpact && (
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    철회하면 {withdrawalImpact}을 쓸 수 없어요.
-                  </p>
+                {locked ? (
+                  <p className="mt-1 text-[11px] text-muted-foreground">가입 시 필수로 동의한 항목이라 철회할 수 없어요.</p>
+                ) : (
+                  granted && impact && (
+                    <p className="mt-1 text-[11px] text-muted-foreground">철회하면 {impact}을 쓸 수 없어요.</p>
+                  )
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-3">
-                {consentType && (
+                {locked ? (
+                  <span className="text-xs text-muted-foreground" title="가입 시 필수로 동의한 항목이라 철회할 수 없어요">
+                    철회 불가
+                  </span>
+                ) : (
                   <button
                     onClick={() => void handleToggleConsent(consentType, granted)}
                     disabled={consentActionType === consentType}

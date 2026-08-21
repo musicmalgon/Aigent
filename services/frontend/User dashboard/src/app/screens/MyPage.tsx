@@ -1,44 +1,52 @@
 import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { OverlayKind } from "../types";
-import { getCurrentConsents } from "../api/consents";
+import { getBehavioralRecordsRange, type BehavioralRecordRead } from "../api/behavioralRecords";
 
-// Consent.tsx의 CONSENT_ITEMS와 같은 개수(5개) -- 동의내역 요약에 "몇 개 중
-// 몇 개"를 보여주기 위한 분모.
-const TOTAL_CONSENT_ITEMS = 5;
+// 지금 실제로 연동 가능한 항목 수(Google Calendar, Samsung Health) -- 새 연동이
+// 추가되면 이 숫자와 countConnectedIntegrations도 함께 늘려야 한다.
+const TOTAL_INTEGRATIONS = 2;
+
+// Samsung Health(Health Connect)가 실제로 값을 넣어준 적 있는지는 최근
+// 생활기록의 source_by_field에 "health_platform"이 하나라도 있는지로
+// 판단한다 -- 이미 있는 생활기록 조회 API 응답만으로 알 수 있어 새 백엔드가
+// 필요 없다. Google Calendar는 실제 연동이 구현돼 있지 않으므로(연동 화면의
+// 토글은 아직 로컬 UI 상태일 뿐 아무 데도 저장되지 않는다) 연동된 것처럼
+// 세지 않는다 -- 실제로 연동되지 않은 걸 연동됐다고 보여주지 않기 위함이다.
+function countConnectedIntegrations(records: BehavioralRecordRead[]): number {
+  const samsungHealthConnected = records.some(record =>
+    Object.values(record.source_by_field).includes("health_platform")
+  );
+  return samsungHealthConnected ? 1 : 0;
+}
 
 export function MyPage({ open }: { open: (kind: OverlayKind) => void }) {
-  // 예전엔 "연결 1개", "4개 항목"이 화면에 고정 문자열로 박혀 있었다.
-  // 실제로는 연동이 하나도 연결돼 있지 않고(#M7 -- Google Calendar는 아직
-  // 미리보기 전용) 동의도 항목마다 사용자가 실제로 고른 것과 다를 수
-  // 있어서(#H1), 이 요약이 실제 상태와 어긋나 있었다(#M8). 동의내역만은
-  // 서버에서 실제 granted 개수를 받아와 보여준다.
-  const [grantedConsentCount, setGrantedConsentCount] = useState<number | null>(null);
+  const [connectedCount, setConnectedCount] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const consents = await getCurrentConsents();
-        const granted = consents.filter(c => c.status === "granted").length;
-        if (!cancelled) setGrantedConsentCount(granted);
-      } catch {
-        // 무시 -- 아래에서 요약 없이 표시됨 (거짓 숫자를 보여주는 것보다 낫다)
-      }
-    })();
+    getBehavioralRecordsRange()
+      .then(records => {
+        if (!cancelled) setConnectedCount(countConnectedIntegrations(records));
+      })
+      .catch(() => {
+        // 조회 실패는 "연동 안 됨"으로 안전하게 보여준다 -- 마이페이지
+        // 전체를 에러 화면으로 만들 정도의 정보는 아니다.
+        if (!cancelled) setConnectedCount(0);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
   const rows: [string, string, string, OverlayKind][] = [
-    ["연동", "캘린더와 건강 기록을 연결해 입력을 줄여요.", "0개 연결됨", "integration"],
     [
-      "동의내역",
-      "내가 허용한 데이터 사용 범위를 확인해요.",
-      grantedConsentCount === null ? "" : `${grantedConsentCount}/${TOTAL_CONSENT_ITEMS}개 항목`,
-      "consent-history",
+      "연동",
+      "캘린더와 건강 기록을 연결해 입력을 줄여요.",
+      `${connectedCount ?? 0}/${TOTAL_INTEGRATIONS}`,
+      "integration",
     ],
+    ["동의내역", "내가 허용한 데이터 사용 범위를 확인해요.", "5개 항목", "consent-history"],
     ["개인정보 수정", "이름, 비밀번호와 계정 연결을 관리해요.", "", "account"],
   ];
 

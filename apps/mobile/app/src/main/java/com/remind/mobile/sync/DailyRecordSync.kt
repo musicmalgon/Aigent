@@ -13,6 +13,7 @@ import retrofit2.HttpException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 internal const val TEST_ACCOUNT_EMAIL = "remind-poc-tester@example.com"
 internal const val TEST_ACCOUNT_PASSWORD = "PoCTester!2026"
@@ -169,7 +170,15 @@ private suspend fun syncDailyRecord(
     }
     return try {
         val steps = healthConnectManager.readStepsTotal(start, end)
-        val sleepSessions = healthConnectManager.readSleepSessions(start, end)
+        // Health Connect의 readRecords는 세션이 범위와 "겹치는지"가 아니라 세션의
+        // 시작 시각이 범위 안에 있는지로 거른다. 그래서 하루(자정~자정) 범위를
+        // 그대로 쓰면 자정 전에 잠든 수면 세션은 통째로 빠졌다 -- 대부분의
+        // 사용자가 그렇기 때문에 sleep_minutes가 거의 항상 null로 올라갔다.
+        // 전날부터 읽어온 뒤 "이 날 깬" 세션만 남긴다 (수면은 잠든 날이 아니라
+        // 깬 날에 귀속시킨다 -- 그래야 오늘 기록 화면의 "어젯밤 수면"과 맞는다).
+        val sleepSessions = healthConnectManager
+            .readSleepSessions(start.minus(1, ChronoUnit.DAYS), end)
+            .filter { it.endTime > start && it.endTime <= end }
         val exerciseSessions = healthConnectManager.readExerciseSessions(start, end)
         // "no data for the day" is a real, valid state the backend needs to
         // see (it feeds the "생활데이터 부족" combined-signal case) -- so we

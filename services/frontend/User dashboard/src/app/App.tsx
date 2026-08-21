@@ -6,6 +6,8 @@ import { nav, type AppScreen, type OnboardMode, type OverlayKind } from "./types
 import { getCurrentUser } from "./api/users";
 import { getAccessToken, setAccessToken } from "./api/client";
 import { logout } from "./api/auth";
+import { getCurrentConsents } from "./api/consents";
+import { todayDateString } from "./lib/date";
 import type { DimensionScores } from "./api/assessments";
 
 import { Welcome } from "../app/screens/Welcome";
@@ -23,10 +25,6 @@ import { ReportView } from "./screens/ReportView";
 import { PlanView } from "./screens/PlanView";
 import { MyPage } from "./screens/MyPage";
 import { OverlayContent } from "./screens/OverlayContent";
-
-function todayDateString() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>("welcome");
@@ -75,7 +73,26 @@ export default function App() {
         const user = await getCurrentUser();
         if (cancelled) return;
         setUserName(user.name);
-        setScreen("home");
+
+        // 이메일 가입은 Auth.tsx에서 가입 직후 go("consent")로 명시적으로
+        // 동의 화면을 거치지만, 구글 로그인은 이 mount 시점 복구가 유일한
+        // 진입점이라 그 분기가 없다 -- 그 결과 구글로 막 가입한 사용자도
+        // 곧장 home으로 가서 동의 기록이 하나도 없는 채로 남았고,
+        // require_consent가 걸린 오늘기록/감정일기가 영구 403이었다(#H3).
+        // 여기서 필수 동의(health_data, emotion_diary) 완료 여부를 확인해
+        // 미완료면 이메일 가입과 같은 동의 화면으로 보낸다.
+        let needsConsent = false;
+        try {
+          const consents = await getCurrentConsents();
+          const granted = new Set(
+            consents.filter(c => c.status === "granted").map(c => c.consent_type)
+          );
+          needsConsent = !(granted.has("health_data") && granted.has("emotion_diary"));
+        } catch {
+          // 동의 상태 확인 자체가 실패해도 로그인된 사용자를 로그아웃시킬
+          // 이유는 아니다 -- 이전 동작(home으로 보냄)으로 안전하게 폴백.
+        }
+        setScreen(needsConsent ? "consent" : "home");
       } catch {
         // 토큰이 만료/무효화됐을 수 있음 -- 지워서 welcome에서 새로 로그인하게 함
         logout();

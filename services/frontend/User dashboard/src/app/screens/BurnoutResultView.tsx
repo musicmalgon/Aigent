@@ -29,30 +29,98 @@ function domainLabel(subscaleKey: (typeof BURNOUT_SUBSCALES)[number]["key"]): st
 // 문구/색만 고른다. 소수점 반올림은 여기(표시용)에서만 한다.
 const RISK_COPY: Record<
   KBatRiskLevel,
-  { emoji: string; label: string; sublabel: string; tone: "sage" | "ochre" | "clay"; description: string }
+  {
+    emoji: string;
+    label: string;
+    sublabel: string;
+    /** 결과 명칭(양호/주의/경고)만으로는 지금 상태가 어느 정도인지 바로
+     *  와닿지 않는다는 문제 -- 낮음/보통/높음처럼 더 직관적인 수준 표현을 같이 보여준다. */
+    levelLabel: string;
+    tone: "sage" | "ochre" | "clay";
+    /** 게이지 색상 -- Tag의 TAG_TONES(common.tsx) dot 색과 맞춘다 */
+    barColor: string;
+    description: string;
+    /** "현재 상태" 한 줄 요약 -- 점수/게이지와 함께 한눈에 보이는 짧은 문구 */
+    statusPhrase: string;
+  }
 > = {
   good: {
     emoji: "🟢",
     label: "양호",
     sublabel: "안전",
+    levelLabel: "낮음",
     tone: "sage",
+    barColor: "#738a77",
     description: "정상적인 스트레스 수준입니다. 현재의 리듬을 유지하세요.",
+    statusPhrase: "안정적으로 지내고 있는 단계예요",
   },
   caution: {
     emoji: "🟠",
     label: "주의",
     sublabel: "위험군",
+    levelLabel: "보통",
     tone: "ochre",
+    barColor: "#b89a59",
     description: "번아웃 초기 증상이 나타납니다. 휴식과 직무 환경 개선이 필요합니다.",
+    statusPhrase: "주의가 필요한 단계예요",
   },
   warning: {
     emoji: "🔴",
     label: "경고",
     sublabel: "고위험군",
+    levelLabel: "높음",
     tone: "clay",
+    barColor: "#a25a45",
     description: "심각한 번아웃 상태입니다. 전문가 상담이나 치료적 개입을 권장합니다.",
+    statusPhrase: "적극적인 관리와 휴식이 필요한 단계예요",
   },
 };
+
+// 판정 경계값 -- app/domain/kbat/scoring.py의 _GOOD_CAUTION_BOUNDARY /
+// _CAUTION_WARNING_BOUNDARY와 정확히 같은 값이어야 게이지 위 구간 색과
+// 실제 risk_level 판정이 어긋나지 않는다. 척도 범위(1~5)도 LIKERT_MIN/MAX와 같다.
+const SCORE_MIN = 1;
+const SCORE_MAX = 5;
+const GOOD_CAUTION_BOUNDARY = 2.535;
+const CAUTION_WARNING_BOUNDARY = 2.955;
+
+/** 1.00~5.00 원점수를 게이지 위 0~100% 위치로 바꾼다. */
+function scoreToPercent(value: number): number {
+  const clamped = Math.min(SCORE_MAX, Math.max(SCORE_MIN, value));
+  return ((clamped - SCORE_MIN) / (SCORE_MAX - SCORE_MIN)) * 100;
+}
+
+/** 전체 평균 점수가 1.00~5.00 범위에서 어디쯤인지 보여주는 게이지.
+ *  양호/주의/경고 구간을 색으로 나누고, 현재 점수 위치에 마커를 찍는다. */
+function ScoreGauge({ score }: { score: number }) {
+  const goodEnd = scoreToPercent(GOOD_CAUTION_BOUNDARY);
+  const cautionEnd = scoreToPercent(CAUTION_WARNING_BOUNDARY);
+  const markerPos = scoreToPercent(score);
+
+  return (
+    <div className="mt-6">
+      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <span>{SCORE_MIN.toFixed(2)}</span>
+        <span>{SCORE_MAX.toFixed(2)}</span>
+      </div>
+      <div className="relative mt-1.5 h-2 rounded-full bg-[#e4dfd7]">
+        <div className="absolute inset-y-0 left-0 rounded-l-full" style={{ width: `${goodEnd}%`, background: RISK_COPY.good.barColor }} />
+        <div className="absolute inset-y-0" style={{ left: `${goodEnd}%`, width: `${cautionEnd - goodEnd}%`, background: RISK_COPY.caution.barColor }} />
+        <div className="absolute inset-y-0 rounded-r-full" style={{ left: `${cautionEnd}%`, width: `${100 - cautionEnd}%`, background: RISK_COPY.warning.barColor }} />
+        <div
+          className="absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[#292826] shadow-sm"
+          style={{ left: `${markerPos}%` }}
+          aria-hidden
+        />
+      </div>
+      <div className="mt-2 flex justify-between text-[10px] text-muted-foreground">
+        <span>낮음</span>
+        <span>보통</span>
+        <span>높음</span>
+      </div>
+    </div>
+  );
+}
 
 function formatScore(value: number): string {
   return value.toFixed(2);
@@ -213,6 +281,9 @@ export function BurnoutResultView({ go }: { go: (screen: AppScreen) => void }) {
             <button onClick={() => go("burnout")} className="mt-9 rounded-lg bg-[#68796b] px-4 py-3 text-sm font-semibold text-white">
               자가진단 시작하기
             </button>
+            <div className="mt-6">
+              <TextButton onClick={() => go("home")}>홈으로 돌아가기</TextButton>
+            </div>
           </div>
         </div>
       </main>
@@ -251,6 +322,9 @@ export function BurnoutResultView({ go }: { go: (screen: AppScreen) => void }) {
             <button onClick={() => go("record")} className="mt-8 rounded-lg bg-[#68796b] px-4 py-3 text-sm font-semibold text-white">
               오늘 기록 남기기
             </button>
+            <div className="mt-6">
+              <TextButton onClick={() => go("home")}>홈으로 돌아가기</TextButton>
+            </div>
           </div>
         </div>
       </main>
@@ -299,11 +373,25 @@ export function BurnoutResultView({ go }: { go: (screen: AppScreen) => void }) {
               </Tag>
             </div>
             <h1 className="mt-4 font-serif text-[30px] leading-[1.55] tracking-[-.05em]">
-              전체 평균 {formatScore(result.total_average)}
-              <span className="text-muted-foreground"> / 5.00</span>
+              현재 상태: {copy.statusPhrase}
               <NoteMark />
             </h1>
+
+            {/* 요구사항 2-①: 결과 명칭만이 아니라 실제 점수·전체 범위에서의
+                위치·낮음/보통/높음 수준을 함께 보여준다. */}
+            <div className="mt-5 divide-y divide-border border-y border-border">
+              <SummaryLine label="현재 점수" value={`${formatScore(result.total_average)} / 5.00`} />
+              <SummaryLine label="평가 수준" value={copy.levelLabel} />
+            </div>
+            <ScoreGauge score={result.total_average} />
+
             <p className="mt-5 text-sm leading-7 text-muted-foreground">{copy.description}</p>
+
+            {/* 요구사항 2-③: "고위험군" 같은 표현으로 실제 진단을 받은 것처럼
+                오해하지 않도록, 점수/게이지 바로 아래에서 한 번 더 분명히 안내한다. */}
+            <p className="mt-4 rounded-lg bg-[#f5f1e9] px-4 py-3 text-xs leading-6 text-muted-foreground">
+              이 결과는 설문 응답과 최근 생활 기록을 바탕으로 지금 상태를 참고해 보기 위한 정보이며, 의료적 진단이나 질병 판정이 아니에요. 상태가 걱정된다면 전문가와 상담해 보시길 권해요.
+            </p>
 
             <button
               onClick={() => setExpanded(v => !v)}

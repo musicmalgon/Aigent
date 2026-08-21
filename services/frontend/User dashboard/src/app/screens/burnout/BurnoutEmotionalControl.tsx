@@ -4,6 +4,8 @@ import { BurnoutSubscaleScreen } from "./BurnoutSubscaleScreen";
 export function BurnoutEmotionalControl({
   subStep,
   totalSubSteps,
+  initialAnswers,
+  onAnswersChange,
   onNext,
   onBack,
   submitting,
@@ -11,6 +13,8 @@ export function BurnoutEmotionalControl({
 }: {
   subStep: number;
   totalSubSteps: number;
+  initialAnswers?: (number | null)[];
+  onAnswersChange?: (answers: (number | null)[]) => void;
   onNext: (answers: number[]) => void;
   onBack: () => void;
   /** 마지막 영역이라 여기서 4개 영역 결과를 한 번에 저장한다 */
@@ -25,6 +29,8 @@ export function BurnoutEmotionalControl({
       questions={EMOTIONAL_CONTROL_QUESTIONS}
       subStep={subStep}
       totalSubSteps={totalSubSteps}
+      initialAnswers={initialAnswers}
+      onAnswersChange={onAnswersChange}
       onNext={onNext}
       onBack={onBack}
       submitting={submitting}

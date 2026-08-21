@@ -127,7 +127,6 @@ export function Integration({
         </button>
       </div>
       <p className="mt-3 text-[11px] text-muted-foreground">{connected ? "마지막 동기화 · 아직 없음" : "실제 연동 전"}</p>
-      <button className="mt-2 text-xs text-[#536458] underline underline-offset-4">어떤 데이터를 사용하는지 보기</button>
     </div>
   );
 }

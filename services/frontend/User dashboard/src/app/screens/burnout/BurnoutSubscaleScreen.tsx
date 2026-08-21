@@ -9,6 +9,8 @@ export function BurnoutSubscaleScreen({
   questions,
   subStep,
   totalSubSteps,
+  initialAnswers,
+  onAnswersChange,
   onNext,
   onBack,
   submitting,
@@ -22,6 +24,11 @@ export function BurnoutSubscaleScreen({
   questions: string[];
   subStep: number; // 1-based
   totalSubSteps: number;
+  /** 이 영역으로 다시 돌아왔을 때 이어서 보여줄 이전 선택값 (BurnoutFlow가 들고 있음) */
+  initialAnswers?: (number | null)[];
+  /** 문항을 고를 때마다 상위(BurnoutFlow)로 올려서, 아직 "다음"을 누르지 않은
+   *  응답도 다른 영역으로 이동했다가 돌아왔을 때 사라지지 않게 한다 */
+  onAnswersChange?: (answers: (number | null)[]) => void;
   /** 리커트 응답(0~4)을 그대로 넘긴다 -- 채점은 BurnoutFlow가 모아서 한다 */
   onNext: (answers: number[]) => void;
   onBack?: () => void;
@@ -31,11 +38,16 @@ export function BurnoutSubscaleScreen({
   notice?: string;
 }) {
   const total = questions.length;
-  const [answers, setAnswers] = useState<(number | null)[]>(Array(total).fill(null));
+  const [answers, setAnswers] = useState<(number | null)[]>(() => initialAnswers ?? Array(total).fill(null));
   const answered = answers.filter(a => a !== null).length;
   const allAnswered = answered === total;
 
-  const handleSelect = (qi: number, v: number) => setAnswers(prev => prev.map((a, i) => (i === qi ? v : a)));
+  const handleSelect = (qi: number, v: number) =>
+    setAnswers(prev => {
+      const next = prev.map((a, i) => (i === qi ? v : a));
+      onAnswersChange?.(next);
+      return next;
+    });
 
   return (
     <main className="min-h-screen bg-background px-6 py-7 sm:px-10">

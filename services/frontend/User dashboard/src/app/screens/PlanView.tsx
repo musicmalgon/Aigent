@@ -52,6 +52,13 @@ export function PlanView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 회복계획을 "고르는" 화면(추천 목록)과 "내 계획"(체크리스트) 화면을 오가는
+  // 단계. 이전에는 items.length로만 어느 화면인지 정했는데, 그러면 계획을
+  // 하나라도 담는 순간 추천 목록으로 되돌아갈 방법이 없었다 -- 다음 단계로만
+  // 이동할 수 있던 문제. view state로 분리해서 "이전" 버튼으로 되돌아갈 수
+  // 있게 하고, 되돌아가도 이미 담은 items는 그대로 둔다.
+  const [view, setView] = useState<"pick" | "plan">("pick");
+
   const [settings, setSettings] = useState<RecoveryPlanSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
 
@@ -69,6 +76,8 @@ export function PlanView() {
       .then(([plan, suggestions]) => {
         setItems(plan);
         setRecommendations(suggestions);
+        // 이미 담아둔 계획이 있으면 곧바로 "내 계획"부터 보여준다.
+        setView(plan.length > 0 ? "plan" : "pick");
       })
       .catch(() => setError("회복 계획을 불러오지 못했어요."))
       .finally(() => setLoading(false));
@@ -101,11 +110,13 @@ export function PlanView() {
       const created = await addRecoveryPlanItem(suggestion.id);
       setItems(current => [...current, created]);
       setRecommendations(current => current.filter(r => r.id !== suggestion.id));
+      setView("plan");
     } catch (err) {
       // 이미 계획에 있는 행동이면(409) 목록에서만 조용히 지운다 -- 사용자
       // 입장에서는 어차피 "추가돼 있다"는 결과가 같다.
       if (err instanceof Error && err.message.includes("already in the plan")) {
         setRecommendations(current => current.filter(r => r.id !== suggestion.id));
+        setView("plan");
         return;
       }
       setError(err instanceof Error ? err.message : "회복 계획에 추가하지 못했어요.");
@@ -159,7 +170,7 @@ export function PlanView() {
       <p className="mt-3 text-sm leading-6 text-muted-foreground">계획은 나를 재촉하는 약속이 아니라, 나를 돌보는 작은 여백이에요.</p>
       {loading && <p className="mt-10 text-sm text-muted-foreground">불러오는 중...</p>}
       {error && <p className="mt-10 text-sm text-red-500">{error}</p>}
-      {!loading && !error && items.length === 0 && (
+      {!loading && !error && view === "pick" && (
         <section className="mt-10 border-y border-border py-6">
           <p className="text-sm text-muted-foreground">지금 바로 시작할 수 있는 작은 행동이에요.</p>
           <div className="mt-4 divide-y divide-border">
@@ -172,21 +183,36 @@ export function PlanView() {
                 <button onClick={() => void addSuggestion(suggestion)} className="text-xs font-semibold text-[#68796b]">추가</button>
               </div>
             ))}
+            {recommendations.length === 0 && <p className="py-4 text-sm text-muted-foreground">지금 추천할 만한 항목이 더 없어요.</p>}
           </div>
+          {items.length > 0 && (
+            <button onClick={() => setView("plan")} className="mt-5 text-xs font-semibold text-[#68796b] underline underline-offset-4">
+              내 계획 보기 ({items.length})
+            </button>
+          )}
         </section>
       )}
-      {!loading && !error && items.length > 0 && <div className="mt-10 divide-y divide-border border-y border-border">
-        {items.map(item => (
-          <button onClick={() => void toggle(item)} className="flex w-full items-center gap-4 py-5 text-left" key={item.id}>
-            <CheckBox checked={item.status === "completed"} />
-            <div className="flex-1">
-              <p className={`text-sm font-medium ${item.status === "completed" ? "line-through text-muted-foreground" : ""}`}>{item.title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{item.duration_minutes ? `${item.duration_minutes}분 · ` : ""}{item.status === "completed" ? "완료했어요" : "10분부터 시작해도 괜찮아요"}</p>
-            </div>
-            <ChevronRight size={16} className="text-[#aaa197]" />
-          </button>
-        ))}
-      </div>}
+      {!loading && !error && view === "plan" && (
+        <div className="mt-10">
+          {recommendations.length > 0 && (
+            <button onClick={() => setView("pick")} className="mb-4 text-xs text-muted-foreground underline underline-offset-4">
+              이전 · 추천에서 더 담기
+            </button>
+          )}
+          <div className="divide-y divide-border border-y border-border">
+            {items.map(item => (
+              <button onClick={() => void toggle(item)} className="flex w-full items-center gap-4 py-5 text-left" key={item.id}>
+                <CheckBox checked={item.status === "completed"} />
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${item.status === "completed" ? "line-through text-muted-foreground" : ""}`}>{item.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{item.duration_minutes ? `${item.duration_minutes}분 · ` : ""}{item.status === "completed" ? "완료했어요" : "10분부터 시작해도 괜찮아요"}</p>
+                </div>
+                <ChevronRight size={16} className="text-[#aaa197]" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {settingsError && <p className="mt-6 text-xs text-red-500">{settingsError}</p>}
 

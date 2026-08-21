@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CheckBox, OnboardingFrame } from "../components/common";
 import type { AppScreen } from "../types";
-import { grantConsent } from "../api/consents";
+import { grantConsent, type ConsentType } from "../api/consents";
 
 const CONSENT_ITEMS: [string, string][] = [
   ["서비스 이용약관", "필수"],
@@ -11,12 +11,17 @@ const CONSENT_ITEMS: [string, string][] = [
   ["선택적 외부 서비스 연동 동의", "선택"],
 ];
 
-// 화면 체크박스 인덱스 -> 백엔드 ConsentType 매핑.
-// 백엔드에 health_data / emotion_diary 두 종류만 있어서, 나머지 항목(이용약관/개인정보/외부연동)은
-// 서버로 보내지 않고 화면에서만 체크 상태로 관리함. 실제 매핑이 맞는지 기획/백엔드 확인 필요.
-const CONSENT_TYPE_MAP: Record<number, "health_data" | "emotion_diary"> = {
+// 화면 체크박스 인덱스 -> 백엔드 ConsentType 매핑. 예전엔 health_data /
+// emotion_diary 두 종류만 서버로 보내고 나머지 3개(이용약관/개인정보/외부연동)는
+// 화면 체크 상태로만 관리해서, 동의내역 화면이 사용자의 실제 선택과 무관하게
+// 이 3개를 항상 "가입 시 동의"라고 표시했다 -- 특히 선택 항목(4번)은 체크
+// 안 해도 그렇게 보여서 실제 선택과 정반대였다(#H1). 이제 5개 전부 저장한다.
+const CONSENT_TYPE_MAP: Record<number, ConsentType> = {
+  0: "terms_of_service",
+  1: "privacy_policy",
   2: "health_data",
   3: "emotion_diary",
+  4: "external_integration",
 };
 
 export function Consent({ go, openDetail }: { go: (screen: AppScreen) => void; openDetail: (item: string) => void }) {

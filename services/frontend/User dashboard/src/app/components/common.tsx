@@ -106,12 +106,19 @@ export function Integration({
   detail,
   connected,
   setConnected,
+  onShowDataUsage,
 }: {
   name: string;
   detail: string;
   connected: boolean;
   setConnected: (value: boolean) => void;
+  onShowDataUsage?: () => void;
 }) {
+  // 이 배지는 아직 실제 연동이 없는 상태에서 "연결 흐름만 미리 보여주는"
+  // 용도다(OverlayContent의 "아직 준비 중이에요" 고지 참고). 예전엔 토글을
+  // 켜면 "연결됨"이라고 표시해서, 바로 아래 고지문("아직 준비 중이에요")과
+  // 정면으로 모순됐다(#M7). 실제로 연동된 게 없다는 걸 두 상태 모두에서
+  // 동일하게 밝혀서 배지 자체가 거짓을 말하지 않게 한다.
   return (
     <div className="border-b border-border py-6">
       <div className="flex items-start justify-between gap-4">
@@ -123,11 +130,11 @@ export function Integration({
           onClick={() => setConnected(!connected)}
           className={`rounded-full px-3 py-1.5 text-xs ${connected ? "bg-[#e2ece1] text-[#536458]" : "border border-border text-muted-foreground"}`}
         >
-          {connected ? "연결됨" : "연결 준비 중"}
+          {connected ? "연결 미리보기 켜짐" : "연결 전"}
         </button>
       </div>
-      <p className="mt-3 text-[11px] text-muted-foreground">{connected ? "마지막 동기화 · 아직 없음" : "실제 연동 전"}</p>
-      <button className="mt-2 text-xs text-[#536458] underline underline-offset-4">어떤 데이터를 사용하는지 보기</button>
+      <p className="mt-3 text-[11px] text-muted-foreground">아직 실제로 연동되지 않아요 — 위 배지는 화면 흐름만 미리 보여줘요.</p>
+      <button onClick={onShowDataUsage} className="mt-2 text-xs text-[#536458] underline underline-offset-4">어떤 데이터를 사용하는지 보기</button>
     </div>
   );
 }

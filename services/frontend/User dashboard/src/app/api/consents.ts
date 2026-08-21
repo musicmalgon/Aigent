@@ -1,6 +1,11 @@
 import { apiFetch } from "./client";
 
-export type ConsentType = "health_data" | "emotion_diary";
+export type ConsentType =
+  | "terms_of_service"
+  | "privacy_policy"
+  | "health_data"
+  | "emotion_diary"
+  | "external_integration";
 export type ConsentStatus = "granted" | "withdrawn";
 
 export interface ConsentRecord {

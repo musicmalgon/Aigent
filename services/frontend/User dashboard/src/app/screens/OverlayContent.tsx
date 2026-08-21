@@ -9,9 +9,22 @@ import { getEmotionAnalyses, type EmotionAnalysisRead } from "../api/emotionAnal
 import { getCurrentConsents, grantConsent, withdrawConsent, type ConsentRecord, type ConsentType } from "../api/consents";
 
 // 화면에 보여줄 5개 항목 -> 백엔드 ConsentType 매핑 (Consent.tsx와 완전히 동일한 이름 사용 — "자세히" 상세 문구를 같이 찾아 쓰기 위함)
+// 예전엔 이 중 2개만 매핑돼 있어서 나머지 3개는 실제 선택과 무관하게 항상
+// "가입 시 동의"로 고정 표시됐다(#H1). 이제 5개 전부 실제 상태를 보여준다.
 const CONSENT_ITEM_TYPE_MAP: Record<string, ConsentType> = {
+  "서비스 이용약관": "terms_of_service",
+  "개인정보 수집 및 이용": "privacy_policy",
   "건강·생활 데이터 활용 동의": "health_data",
   "생활 흐름 분석 활용 동의": "emotion_diary",
+  "선택적 외부 서비스 연동 동의": "external_integration",
+};
+
+// 철회하면 실제로 못 쓰게 되는 기능이 있는 항목만 경고 문구를 보여준다.
+// 이용약관/개인정보/외부연동은 철회해도 백엔드에 아무 기능 게이트가 없어서
+// (require_consent가 걸린 건 health_data, emotion_diary뿐) 여기에 넣지 않는다.
+const CONSENT_WITHDRAWAL_IMPACT: Partial<Record<ConsentType, string>> = {
+  health_data: "일상기록 저장",
+  emotion_diary: "마음 기록 분석",
 };
 
 function formatConsentDate(iso: string): string {
@@ -345,7 +358,13 @@ export function OverlayContent({
     return (
       <>
         <p className="text-sm leading-6 text-muted-foreground">연동된 기록도 직접 수정한 값이 우선해요.</p>
-        <Integration name="Google Calendar" detail="일정 개수와 바쁜 시간대를 기록에 참고해요." connected={connected} setConnected={setConnected} />
+        <Integration
+          name="Google Calendar"
+          detail="일정 개수와 바쁜 시간대를 기록에 참고해요."
+          connected={connected}
+          setConnected={setConnected}
+          onShowDataUsage={() => onOpenConsentDetail?.("선택적 외부 서비스 연동 동의")}
+        />
         {/* Health Connect(삼성헬스 등)는 브라우저에서 접근 불가능한 안드로이드
             전용 API라 이 웹 화면에서 누른다고 연결되는 구조가 아니다. 실제
             연동은 모바일 앱의 권한 허용으로 이미 자동으로 이뤄지고 있어서
@@ -384,19 +403,18 @@ export function OverlayContent({
           const consentType = CONSENT_ITEM_TYPE_MAP[x];
           const record = consentType ? consentRecords.find(r => r.consent_type === consentType) : undefined;
           const granted = record?.status === "granted";
-          const statusLabel = consentType
-            ? granted
-              ? `${requiredLabel} · ${formatConsentDate(record.granted_at)}`
-              : `${requiredLabel} · 동의 안 함`
-            : `${requiredLabel} · 가입 시 동의`;
+          const statusLabel = granted
+            ? `${requiredLabel} · ${formatConsentDate(record.granted_at)}`
+            : `${requiredLabel} · 동의 안 함`;
+          const withdrawalImpact = consentType && CONSENT_WITHDRAWAL_IMPACT[consentType];
           return (
             <div className="flex items-center justify-between gap-4 py-4" key={x}>
               <div>
                 <p className="text-sm">{x}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{statusLabel}</p>
-                {consentType && granted && (
+                {granted && withdrawalImpact && (
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    철회하면 {x === "건강·생활 데이터 활용 동의" ? "일상기록 저장" : "마음 기록 분석"}을 쓸 수 없어요.
+                    철회하면 {withdrawalImpact}을 쓸 수 없어요.
                   </p>
                 )}
               </div>

@@ -2,10 +2,15 @@ import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { OverlayKind } from "../types";
 import { getBehavioralRecordsRange, type BehavioralRecordRead } from "../api/behavioralRecords";
+import { getCurrentConsents } from "../api/consents";
 
 // 지금 실제로 연동 가능한 항목 수(Google Calendar, Samsung Health) -- 새 연동이
 // 추가되면 이 숫자와 countConnectedIntegrations도 함께 늘려야 한다.
 const TOTAL_INTEGRATIONS = 2;
+
+// Consent.tsx의 CONSENT_ITEMS와 같은 개수(5개) -- 동의내역 요약에 "몇 개 중
+// 몇 개"를 보여주기 위한 분모.
+const TOTAL_CONSENT_ITEMS = 5;
 
 // Samsung Health(Health Connect)가 실제로 값을 넣어준 적 있는지는 최근
 // 생활기록의 source_by_field에 "health_platform"이 하나라도 있는지로
@@ -22,6 +27,10 @@ function countConnectedIntegrations(records: BehavioralRecordRead[]): number {
 
 export function MyPage({ open }: { open: (kind: OverlayKind) => void }) {
   const [connectedCount, setConnectedCount] = useState<number | null>(null);
+  // 동의내역 요약도 "5개 항목"으로 고정 문자열이었던 적이 있다 -- 실제로는
+  // 항목마다 사용자가 고른 게 다를 수 있어서(#H1) 서버에서 실제 granted
+  // 개수를 받아와 보여준다.
+  const [grantedConsentCount, setGrantedConsentCount] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +48,20 @@ export function MyPage({ open }: { open: (kind: OverlayKind) => void }) {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentConsents()
+      .then(consents => {
+        if (!cancelled) setGrantedConsentCount(consents.filter(c => c.status === "granted").length);
+      })
+      .catch(() => {
+        // 무시 -- 아래에서 요약 없이 표시됨 (거짓 숫자를 보여주는 것보다 낫다)
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const rows: [string, string, string, OverlayKind][] = [
     [
       "연동",
@@ -46,7 +69,12 @@ export function MyPage({ open }: { open: (kind: OverlayKind) => void }) {
       `${connectedCount ?? 0}/${TOTAL_INTEGRATIONS}`,
       "integration",
     ],
-    ["동의내역", "내가 허용한 데이터 사용 범위를 확인해요.", "5개 항목", "consent-history"],
+    [
+      "동의내역",
+      "내가 허용한 데이터 사용 범위를 확인해요.",
+      grantedConsentCount === null ? "" : `${grantedConsentCount}/${TOTAL_CONSENT_ITEMS}개 항목`,
+      "consent-history",
+    ],
     ["개인정보 수정", "이름, 비밀번호와 계정 연결을 관리해요.", "", "account"],
   ];
 

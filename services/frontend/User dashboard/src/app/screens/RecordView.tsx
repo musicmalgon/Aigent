@@ -474,6 +474,15 @@ export function RecordView({
           />
 
           <SummaryLine
+            label="걸음 수"
+            value={
+              existingRecord?.steps != null
+                ? `${existingRecord.steps.toLocaleString()} 걸음`
+                : "기록 없음"
+            }
+          />
+
+          <SummaryLine
             label="오늘의 마음"
             value={
               emotionResult?.provisional
@@ -673,6 +682,25 @@ export function RecordView({
                   );
                 }
               )}
+            </div>
+
+            {/* 걸음 수는 이 화면에 입력 UI가 없는 필드라(#H8/H9 모바일 동기화
+                전용) 수정 가능한 칸이 아니라 조회 전용으로만 보여준다.
+                "건강데이터 가져오기"를 누르거나 화면을 처음 열 때 existingRecord가
+                갱신되면 여기도 같이 새로고침된다. */}
+            <div className="flex items-center justify-between border-b border-border py-4">
+              <div>
+                <p className="text-sm text-muted-foreground">걸음 수</p>
+                <p className="mt-1 text-[11px] text-[#5a7160]">
+                  {existingRecord?.steps != null ? "기기 연동" : "기록 없음"}
+                </p>
+              </div>
+
+              <p className="text-sm font-medium">
+                {existingRecord?.steps != null
+                  ? `${existingRecord.steps.toLocaleString()} 걸음`
+                  : "—"}
+              </p>
             </div>
 
             {error && (

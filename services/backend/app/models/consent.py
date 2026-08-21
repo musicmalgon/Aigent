@@ -19,12 +19,6 @@ class ConsentType(str, enum.Enum):
     PRIVACY_POLICY = "privacy_policy"
     HEALTH_DATA = "health_data"
     EMOTION_DIARY = "emotion_diary"
-    # 가입 화면(Consent.tsx)이 체크박스 5개를 보여주면서도 실제로는 이
-    # 2개만 서버에 저장했었다 -- 나머지 3개는 사용자가 체크해도 다음
-    # 화면으로 넘어가는 순간 사라졌다. 아래 3개를 추가해 5개 항목 전부
-    # 실제 동의 이력으로 남긴다.
-    TERMS_OF_SERVICE = "terms_of_service"
-    PRIVACY_POLICY = "privacy_policy"
     EXTERNAL_INTEGRATION = "external_integration"
 
 

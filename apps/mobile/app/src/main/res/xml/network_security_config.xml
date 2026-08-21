@@ -9,8 +9,18 @@
 
     <!-- WebView 통합(#102): 배포된 웹 프론트엔드가 아직 HTTP뿐이라 이 IP
          하나에만 좁게 cleartext를 허용한다. 위 로컬 전용 블록과는 분리해서
-         "다른 비로컬 호스트로 넓히지 않는다"는 원칙을 유지한다. -->
+         "다른 비로컬 호스트로 넓히지 않는다"는 원칙을 유지한다.
+
+         웹 프론트엔드 자체는 이 IP로 로드되지만(WEB_APP_URL), 그 안에서
+         만드는 API 호출은 빌드 시점에 구워진 VITE_API_BASE_URL, 즉
+         "34.64.211.201.nip.io"(IP와는 안드로이드 입장에서 완전히 다른
+         호스트명)로 나간다. 구글 OAuth 콜백 도메인을 로그인 시작 지점과
+         맞추려고 nip.io를 쓰게 됐다(#123, #124). 이 도메인이 whitelist에
+         없어서 웹뷰 안의 모든 API 요청(로그인 포함)이 OS 단에서 막혀
+         JS에는 그냥 "Failed to fetch"로만 보였다. 네이티브 쪽 ApiClient.kt는
+         IP를 직접 쓰기 때문에 이 문제를 겪지 않았다. -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">34.64.211.201</domain>
+        <domain includeSubdomains="false">34.64.211.201.nip.io</domain>
     </domain-config>
 </network-security-config>

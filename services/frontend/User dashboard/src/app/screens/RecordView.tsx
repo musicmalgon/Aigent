@@ -19,23 +19,14 @@ import {
   createEmotionAnalysis,
   type EmotionAnalysisRead,
 } from "../api/emotionAnalyses";
+import { APP_TIME_ZONE, todayDateString, yesterdayDateString } from "../lib/date";
 
-function todayDateString() {
-  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-}
-
-// 어제 날짜 -- baseline의 window_end로 쓴다. risk evaluation은 "baseline의
-// window_end가 평가일보다 앞서야" 평소 기준으로 인정한다(app/services/risk_evaluation.py의
-// `baseline.window_end >= record_date`면 못 찾은 것으로 취급). baseline을
-// 오늘 날짜로 계산하면 오늘 자신을 자기 자신의 평소 기준에 포함시키는 셈이
-// 되어 매번 거부된다.
-function yesterdayDateString() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
-}
-
-const TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+// behavioral-records 요청에 실어 보내는 time_zone -- 날짜 문자열(todayDateString
+// 등, lib/date.ts)과 항상 같은 기준(KST)이어야 한다. 예전엔 이 값을 브라우저
+// 로케일(Intl.DateTimeFormat().resolvedOptions().timeZone)에서 가져오면서
+// 날짜 자체는 UTC로 계산해서, 자정~오전 9시(KST) 사이엔 오늘 남긴 기록이
+// 조용히 "어제" 날짜로 저장됐다(#H7).
+const TIME_ZONE = APP_TIME_ZONE;
 
 type MinuteField =
   | "sleep_minutes"
@@ -100,40 +91,72 @@ export function RecordView({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // "건강데이터 가져오기" 버튼 전용 상태 -- 화면을 처음 열 때 자동으로 부르는
+  // 조회와 로딩 상태를 공유하면, 버튼을 눌렀을 때도 화면 전체가 "불러오는
+  // 중..."으로 바뀌어버려서 이미 입력해둔 값이 잠깐 사라진 것처럼 보인다.
+  const [importing, setImporting] = useState(false);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
+
+  // 초기 진입 시 자동 조회와 "건강데이터 가져오기" 버튼이 공유하는 로직.
+  // 모바일에서 이 화면을 열어둔 채로 나중에 동기화했거나, 동기화 후 이 화면을
+  // 새로고침하지 않고 다시 확인하고 싶을 때를 위한 재조회 경로다.
+  async function fetchTodayRecord(): Promise<"found" | "not_found" | "error"> {
+    try {
+      const record = await getBehavioralRecordByDate(todayDateString());
+
+      // record가 null이면 오늘 기록이 아직 없는 정상적인 경우
+      // getBehavioralRecordByDate가 404를 에러로 던지지 않고 null로 돌려줌 -- #137
+      if (!record) return "not_found";
+
+      setExistingRecord(record);
+
+      setMinuteValues({
+        sleep_minutes: record.sleep_minutes,
+        rest_minutes: record.rest_minutes,
+        work_or_study_minutes: record.work_or_study_minutes,
+        exercise_minutes: record.exercise_minutes,
+      });
+
+      // 방금 서버에서 새로 받아온 값이니, 이전에 이 화면에서 직접 고쳤던
+      // "직접 수정됨" 표시는 지운다 -- 지금부터는 다시 기기 값을 보여주는
+      // 상태라서다.
+      setEditedByUser({});
+      setAlreadyRecordedToday(true);
+      return "found";
+    } catch {
+      // 진짜 조회 실패(네트워크/서버 오류 등)
+      return "error";
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      try {
-        const record = await getBehavioralRecordByDate(todayDateString());
-
-        if (cancelled) return;
-
-        // record가 null이면 오늘 기록이 아직 없는 정상적인 경우
-        // getBehavioralRecordByDate가 404를 에러로 던지지 않고 null로 돌려줌 -- #137
-        if (record) {
-          setExistingRecord(record);
-
-          setMinuteValues({
-            sleep_minutes: record.sleep_minutes,
-            rest_minutes: record.rest_minutes,
-            work_or_study_minutes: record.work_or_study_minutes,
-            exercise_minutes: record.exercise_minutes,
-          });
-
-          setAlreadyRecordedToday(true);
-        }
-      } catch {
-        // 진짜 조회 실패(네트워크/서버 오류 등) -- 오늘 기록 없이 진행
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      await fetchTodayRecord();
+      if (!cancelled) setLoading(false);
     })();
 
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function handleImportHealthData() {
+    setImportNotice(null);
+    setImporting(true);
+
+    const result = await fetchTodayRecord();
+
+    setImportNotice(
+      result === "found"
+        ? "모바일에서 동기화한 최신 값을 불러왔어요."
+        : result === "not_found"
+          ? "아직 동기화된 기록이 없어요. 모바일 앱에서 먼저 동기화해 주세요."
+          : "건강데이터를 불러오지 못했어요. 잠시 후 다시 시도해 주세요."
+    );
+    setImporting(false);
+  }
 
   function splitHourMinute(total: number | null): { h: string; m: string } {
     if (total === null) return { h: "", m: "" };
@@ -451,6 +474,15 @@ export function RecordView({
           />
 
           <SummaryLine
+            label="걸음 수"
+            value={
+              existingRecord?.steps != null
+                ? `${existingRecord.steps.toLocaleString()} 걸음`
+                : "기록 없음"
+            }
+          />
+
+          <SummaryLine
             label="오늘의 마음"
             value={
               emotionResult?.provisional
@@ -534,6 +566,23 @@ export function RecordView({
               기기에서 가져온 값이 있으면 우선 채워드려요.
               다르면 직접 고쳐 주세요.
             </p>
+
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleImportHealthData}
+                disabled={importing}
+                className="text-xs font-medium text-[#5a7160] underline underline-offset-4 disabled:opacity-60"
+              >
+                {importing ? "불러오는 중..." : "건강데이터 가져오기"}
+              </button>
+            </div>
+
+            {importNotice && (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {importNotice}
+              </p>
+            )}
 
             <div className="mt-5 grid gap-x-10 border-b border-border sm:grid-cols-2">
               {MINUTE_FIELD_LABELS.map(
@@ -633,6 +682,25 @@ export function RecordView({
                   );
                 }
               )}
+            </div>
+
+            {/* 걸음 수는 이 화면에 입력 UI가 없는 필드라(#H8/H9 모바일 동기화
+                전용) 수정 가능한 칸이 아니라 조회 전용으로만 보여준다.
+                "건강데이터 가져오기"를 누르거나 화면을 처음 열 때 existingRecord가
+                갱신되면 여기도 같이 새로고침된다. */}
+            <div className="flex items-center justify-between border-b border-border py-4">
+              <div>
+                <p className="text-sm text-muted-foreground">걸음 수</p>
+                <p className="mt-1 text-[11px] text-[#5a7160]">
+                  {existingRecord?.steps != null ? "기기 연동" : "기록 없음"}
+                </p>
+              </div>
+
+              <p className="text-sm font-medium">
+                {existingRecord?.steps != null
+                  ? `${existingRecord.steps.toLocaleString()} 걸음`
+                  : "—"}
+              </p>
             </div>
 
             {error && (

@@ -3,6 +3,8 @@ package com.remind.mobile.sync
 import com.remind.mobile.HealthConnectManager
 import com.remind.mobile.buildDailyRecordCreate
 import com.remind.mobile.network.ApiClient
+import com.remind.mobile.network.ConsentGrantRequest
+import com.remind.mobile.network.ConsentType
 import com.remind.mobile.network.DailyRecordCreate
 import com.remind.mobile.network.DailyRecordRead
 import com.remind.mobile.network.LoginRequest
@@ -11,6 +13,7 @@ import retrofit2.HttpException
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 internal const val TEST_ACCOUNT_EMAIL = "remind-poc-tester@example.com"
 internal const val TEST_ACCOUNT_PASSWORD = "PoCTester!2026"
@@ -121,6 +124,38 @@ suspend fun syncTodayRecord(
     )
 }
 
+/**
+ * 백엔드 HEALTH_DATA 동의가 돼 있는지 확인하고, 없으면 그 자리에서 등록한다.
+ *
+ * 예전엔 [syncDailyRecord]가 이 확인 없이 바로 기록을 전송해서, 동의가 없거나
+ * 철회된 사용자는 "지금 동기화" 버튼도 [SyncWorker]의 6시간 주기 자동 동기화도
+ * 이유를 알 수 없는 403만 받았다 -- 버튼은 사용자에게 그대로 노출됐고, 워커는
+ * 그 실패를 로그로만 남기고 조용히 넘어갔다(#H8).
+ *
+ * 여기서의 자동 등록은 "새 동의를 만들어내는" 게 아니다 -- 이 함수를 부르는
+ * 시점엔 이미 Health Connect 기기 권한이 승인된 뒤라(각 sync 함수 호출부가
+ * `hasAllPermissions()`를 먼저 확인함), 사용자가 이미 표현한 동의를 서버
+ * 기록에 반영하는 것에 가깝다. 같은 패턴을 PoC 화면(HealthConnectPocScreen)이
+ * 이미 쓰고 있다 -- 여기서는 그걸 실사용자 동기화 경로에도 동일하게 적용한다.
+ */
+internal suspend fun ensureHealthDataConsent(token: String): Boolean {
+    return try {
+        val consents = ApiClient.service.getConsents("Bearer $token")
+        val alreadyGranted = consents.any {
+            it.consentType == ConsentType.HEALTH_DATA && it.status == "granted"
+        }
+        if (!alreadyGranted) {
+            ApiClient.service.grantConsent(
+                "Bearer $token",
+                ConsentGrantRequest(ConsentType.HEALTH_DATA, "mobile_sync"),
+            )
+        }
+        true
+    } catch (e: Exception) {
+        false
+    }
+}
+
 private suspend fun syncDailyRecord(
     healthConnectManager: HealthConnectManager,
     token: String,
@@ -130,9 +165,20 @@ private suspend fun syncDailyRecord(
     end: Instant,
     onSubmitting: (hasAnyRealData: Boolean) -> Unit,
 ): SyncResult {
+    if (!ensureHealthDataConsent(token)) {
+        return SyncResult.Failure("건강 데이터 동의 확인에 실패했어요. 잠시 후 다시 시도해 주세요.")
+    }
     return try {
         val steps = healthConnectManager.readStepsTotal(start, end)
-        val sleepSessions = healthConnectManager.readSleepSessions(start, end)
+        // Health Connect의 readRecords는 세션이 범위와 "겹치는지"가 아니라 세션의
+        // 시작 시각이 범위 안에 있는지로 거른다. 그래서 하루(자정~자정) 범위를
+        // 그대로 쓰면 자정 전에 잠든 수면 세션은 통째로 빠졌다 -- 대부분의
+        // 사용자가 그렇기 때문에 sleep_minutes가 거의 항상 null로 올라갔다.
+        // 전날부터 읽어온 뒤 "이 날 깬" 세션만 남긴다 (수면은 잠든 날이 아니라
+        // 깬 날에 귀속시킨다 -- 그래야 오늘 기록 화면의 "어젯밤 수면"과 맞는다).
+        val sleepSessions = healthConnectManager
+            .readSleepSessions(start.minus(1, ChronoUnit.DAYS), end)
+            .filter { it.endTime > start && it.endTime <= end }
         val exerciseSessions = healthConnectManager.readExerciseSessions(start, end)
         // "no data for the day" is a real, valid state the backend needs to
         // see (it feeds the "생활데이터 부족" combined-signal case) -- so we

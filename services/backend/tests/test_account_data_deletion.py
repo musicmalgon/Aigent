@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
+from app.core.security import create_access_token
 from app.models.assessment import AssessmentAnchor
 from app.models.consent import ConsentRecord
 from app.models.persistence import (
@@ -227,6 +228,22 @@ def count_rows(engine: Engine, model: type, *, user_id: str) -> int:
         )
 
 
+def google_only_user(engine: Engine, *, email: str) -> tuple[dict[str, str], str]:
+    """비밀번호 없이(hashed_password=None) 구글 로그인으로만 가입한 사용자를
+    직접 심는다. 구글 콜백 자체를 재현할 필요는 없고, 그 결과 상태(비밀번호가
+    없는 계정)만 있으면 #H5 재현·검증에 충분하다."""
+
+    with Session(engine) as session:
+        user = User(email=email, hashed_password=None, google_sub=f"sub-{email}")
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        user_id = user.id
+
+    token = create_access_token(subject=user_id)
+    return {"Authorization": f"Bearer {token}"}, user_id
+
+
 def user_exists(engine: Engine, *, user_id: str) -> bool:
     with Session(engine) as session:
         return session.scalar(select(User).where(User.id == user_id)) is not None
@@ -403,6 +420,27 @@ def test_requires_authentication(client: TestClient) -> None:
     response = delete_account_data(client, None)
 
     assert response.status_code in {401, 403}
+
+
+def test_google_only_account_deletes_without_a_password(
+    client: TestClient,
+    migrated_engine: Engine,
+) -> None:
+    """구글 전용 계정(hashed_password=None)은 애초에 비밀번호가 없어서
+    재확인 비밀번호를 검증할 방법 자체가 없다. 예전엔 verify_password(plain,
+    None)을 그대로 호출해 passlib이 TypeError를 던지며 500으로 깨졌고,
+    프론트는 그 결과 구글 사용자의 계정 삭제 자체가 불가능했다(#H5). 이미
+    검증된 JWT(get_current_user)를 재확인으로 인정하고 비밀번호 검사를
+    건너뛰도록 고쳤으니, 아무 문자열을 보내도 정상 삭제돼야 한다."""
+
+    headers, user_id = google_only_user(
+        migrated_engine, email="google-only-deletion@example.com"
+    )
+
+    response = delete_account_data(client, headers, password="아무 값이나 상관없음")
+
+    assert response.status_code == 200, response.text
+    assert not user_exists(migrated_engine, user_id=user_id)
 
 
 def test_empty_account_returns_zero_counts(client: TestClient) -> None:

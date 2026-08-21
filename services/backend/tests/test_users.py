@@ -1,4 +1,9 @@
 from fastapi.testclient import TestClient
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session
+
+from app.core.security import create_access_token
+from app.models.user import User
 
 
 def authenticated_headers(client: TestClient) -> dict[str, str]:
@@ -42,3 +47,36 @@ def test_user_type_rejects_unknown_value(client: TestClient) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_password_update_on_google_only_account_returns_clear_error(
+    client: TestClient,
+    migrated_engine: Engine,
+) -> None:
+    """구글 전용 계정(hashed_password=None)엔 애초에 비밀번호가 없다. 예전엔
+    verify_password(plain, None)을 그대로 호출해 passlib이 TypeError를
+    던지며 500으로 깨졌고, 프론트는 JSON 파싱 실패로 "요청 실패: 500"만
+    보여줬다(#H5). 이젠 바꿀 비밀번호 자체가 없다는 걸 400으로 명확히
+    알려줘야 한다."""
+
+    with Session(migrated_engine) as session:
+        user = User(
+            email="google-only-password@example.com",
+            hashed_password=None,
+            google_sub="sub-google-only-password",
+        )
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+        user_id = user.id
+
+    headers = {"Authorization": f"Bearer {create_access_token(subject=user_id)}"}
+
+    response = client.patch(
+        "/users/me/password",
+        headers=headers,
+        json={"current_password": "아무거나", "new_password": "new-Password1!"},
+    )
+
+    assert response.status_code == 400, response.text
+    assert "구글" in response.json()["detail"]

@@ -4,11 +4,15 @@ import { BurnoutSubscaleScreen } from "./BurnoutSubscaleScreen";
 export function BurnoutCognitiveControl({
   subStep,
   totalSubSteps,
+  initialAnswers,
+  onAnswersChange,
   onNext,
   onBack,
 }: {
   subStep: number;
   totalSubSteps: number;
+  initialAnswers?: (number | null)[];
+  onAnswersChange?: (answers: (number | null)[]) => void;
   onNext: (answers: number[]) => void;
   onBack: () => void;
 }) {
@@ -20,6 +24,8 @@ export function BurnoutCognitiveControl({
       questions={COGNITIVE_CONTROL_QUESTIONS}
       subStep={subStep}
       totalSubSteps={totalSubSteps}
+      initialAnswers={initialAnswers}
+      onAnswersChange={onAnswersChange}
       onNext={onNext}
       onBack={onBack}
     />

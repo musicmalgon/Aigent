@@ -1,7 +1,19 @@
 import { EXHAUSTION_QUESTIONS } from "../../../data/burnoutQuestions";
 import { BurnoutSubscaleScreen } from "./BurnoutSubscaleScreen";
 
-export function BurnoutExhaustion({ subStep, totalSubSteps, onNext }: { subStep: number; totalSubSteps: number; onNext: (answers: number[]) => void }) {
+export function BurnoutExhaustion({
+  subStep,
+  totalSubSteps,
+  initialAnswers,
+  onAnswersChange,
+  onNext,
+}: {
+  subStep: number;
+  totalSubSteps: number;
+  initialAnswers?: (number | null)[];
+  onAnswersChange?: (answers: (number | null)[]) => void;
+  onNext: (answers: number[]) => void;
+}) {
   return (
     <BurnoutSubscaleScreen
       nameKo="탈진"
@@ -11,6 +23,8 @@ export function BurnoutExhaustion({ subStep, totalSubSteps, onNext }: { subStep:
       questions={EXHAUSTION_QUESTIONS}
       subStep={subStep}
       totalSubSteps={totalSubSteps}
+      initialAnswers={initialAnswers}
+      onAnswersChange={onAnswersChange}
       onNext={onNext}
     />
   );

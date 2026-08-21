@@ -41,14 +41,22 @@ export function BurnoutFlow({ go, mode }: { go: (screen: AppScreen) => void; mod
   // 각 영역 화면이 응답을 로컬 state로만 들고 있어서, 마지막에 한 번에 저장하려면
   // 여기서 영역별 점수를 모아둬야 한다.
   const [scores, setScores] = useState<DimensionScores>({});
+  // 완료 여부와 무관하게(문항을 고를 때마다) 영역별 응답을 그대로 들고 있는다 --
+  // "다음"을 누르기 전에 다른 영역으로 돌아갔다 와도 고르던 답이 남아있게 하기 위함.
+  // 이전/다음으로 다시 그 영역에 들어오면 이 값을 초기값으로 넘겨준다.
+  const [draftAnswers, setDraftAnswers] = useState<Partial<Record<BurnoutSubscale["key"], (number | null)[]>>>({});
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
 
   const goNextScreen = () => go(mode === "brief" ? "home" : "survey");
   const handleBack = () => setSub(s => Math.max(0, s - 1));
 
+  const updateDraft = (key: BurnoutSubscale["key"]) => (answers: (number | null)[]) =>
+    setDraftAnswers(prev => ({ ...prev, [key]: answers }));
+
   const collect = (key: BurnoutSubscale["key"], answers: number[], nextSub: number) => {
     setScores(prev => ({ ...prev, [SUBSCALE_DIMENSIONS[key]]: subscaleScore(answers) }));
+    setDraftAnswers(prev => ({ ...prev, [key]: answers }));
     setSub(nextSub);
   };
 
@@ -90,17 +98,45 @@ export function BurnoutFlow({ go, mode }: { go: (screen: AppScreen) => void; mod
 
   switch (sub) {
     case 0:
-      return <BurnoutExhaustion subStep={1} totalSubSteps={TOTAL_SUBSTEPS} onNext={answers => collect("exhaustion", answers, 1)} />;
+      return (
+        <BurnoutExhaustion
+          subStep={1}
+          totalSubSteps={TOTAL_SUBSTEPS}
+          initialAnswers={draftAnswers.exhaustion}
+          onAnswersChange={updateDraft("exhaustion")}
+          onNext={answers => collect("exhaustion", answers, 1)}
+        />
+      );
     case 1:
-      return <BurnoutMentalDistance subStep={2} totalSubSteps={TOTAL_SUBSTEPS} onNext={answers => collect("mental-distance", answers, 2)} onBack={handleBack} />;
+      return (
+        <BurnoutMentalDistance
+          subStep={2}
+          totalSubSteps={TOTAL_SUBSTEPS}
+          initialAnswers={draftAnswers["mental-distance"]}
+          onAnswersChange={updateDraft("mental-distance")}
+          onNext={answers => collect("mental-distance", answers, 2)}
+          onBack={handleBack}
+        />
+      );
     case 2:
-      return <BurnoutCognitiveControl subStep={3} totalSubSteps={TOTAL_SUBSTEPS} onNext={answers => collect("cognitive-control", answers, 3)} onBack={handleBack} />;
+      return (
+        <BurnoutCognitiveControl
+          subStep={3}
+          totalSubSteps={TOTAL_SUBSTEPS}
+          initialAnswers={draftAnswers["cognitive-control"]}
+          onAnswersChange={updateDraft("cognitive-control")}
+          onNext={answers => collect("cognitive-control", answers, 3)}
+          onBack={handleBack}
+        />
+      );
     case 3:
     default:
       return (
         <BurnoutEmotionalControl
           subStep={4}
           totalSubSteps={TOTAL_SUBSTEPS}
+          initialAnswers={draftAnswers["emotional-control"]}
+          onAnswersChange={updateDraft("emotional-control")}
           onNext={handleFinish}
           onBack={handleBack}
           submitting={saving}

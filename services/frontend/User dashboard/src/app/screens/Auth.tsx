@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronRight } from "lucide-react";
 import { Field, NoteMark } from "../components/common";
 import type { AppScreen } from "../types";
 import { login as loginRequest, signup as signupRequest } from "../api/auth";
-import { BASE_URL } from "../api/client";
+import { OAUTH_BASE_URL } from "../api/client";
 
 export function Auth({
   mode,
@@ -141,7 +141,7 @@ export function Auth({
                 // OAuth 리다이렉트 플로우라 fetch가 아니라 브라우저 자체를
                 // 이동시켜야 한다. 백엔드가 로그인 완료 후 프론트로
                 // ?token=<jwt>를 붙여 돌려보내면 App.tsx가 받는다.
-                window.location.href = `${BASE_URL}/auth/google/login`;
+                window.location.href = `${OAUTH_BASE_URL}/auth/google/login`;
               }}
               className="flex w-full items-center justify-between border-b border-border py-3 text-sm"
             >

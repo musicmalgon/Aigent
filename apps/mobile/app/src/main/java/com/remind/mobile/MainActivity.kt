@@ -169,6 +169,66 @@ fun WebAppScreen(
     var syncing by remember { mutableStateOf(false) }
     var syncStatusText by remember { mutableStateOf<String?>(null) }
 
+    // 예전엔 권한이 없으면 "PoC 테스트 화면에서 먼저 허용해 주세요"라는
+    // 안내만 보여줬다 -- 그 권한 요청 UI(특히 백그라운드 동기화 권한)가
+    // 실제로는 숨겨진 개발자 화면 안에만 있어서, 거길 스스로 찾아 들어가지
+    // 않는 일반 사용자는 배경 자동 동기화를 영원히 켤 방법이 없었다(#H9).
+    // 여기서 PoC 화면과 같은 2단계 요청(포그라운드 -> 승인되면 이어서
+    // 백그라운드)을 기본 화면에서 직접 하도록 한다.
+    var permissionGranted by remember { mutableStateOf(false) }
+    var pendingSyncAfterPermission by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        permissionGranted = healthConnectManager.hasAllPermissions()
+    }
+
+    suspend fun performSync() {
+        syncing = true
+        syncStatusText = "동기화 중..."
+        // 오늘 기록 화면(웹)이 오늘 날짜로 조회하므로, 어제가 아니라 오늘
+        // 자정~지금 범위로 보내야 그 화면에 이어진다 (#143).
+        val result = syncTodayRecord(healthConnectManager, authToken)
+        syncStatusText = when (result) {
+            is SyncResult.Success -> "동기화 완료 (${result.date}) — 오늘 기록 화면에서 확인해 보세요"
+            is SyncResult.SuccessNoData -> "동기화 완료 — 오늘은 아직 기록된 측정값이 없었어요"
+            // 만료된 토큰을 그대로 두면 이 버튼은 앞으로도 계속
+            // 401만 낸다. 지워서 로그인 화면으로 돌려보낸다
+            // (이 문구는 화면이 곧 교체되며 사라진다).
+            SyncResult.Unauthorized -> {
+                currentOnSessionEnded()
+                "로그인이 만료됐어요 — 다시 로그인해 주세요"
+            }
+            is SyncResult.HttpFailure -> "동기화 실패 (HTTP ${result.code})"
+            is SyncResult.Failure -> "동기화 실패: ${result.message}"
+        }
+        syncing = false
+    }
+
+    // 백그라운드 권한은 포그라운드 권한이 먼저 승인된 뒤에만 별개 요청으로
+    // 받을 수 있다(안드로이드 제약, PoC 화면과 동일 이유) -- 그래서 launcher를
+    // 둘로 분리하고, 포그라운드 승인 콜백에서 이어서 호출한다. 자동 동기화를
+    // 켜는 게 목적이라 이 단계 결과와 무관하게 방금 요청한 동기화는 진행한다.
+    val backgroundPermissionLauncher = rememberLauncherForActivityResult(
+        contract = PermissionController.createRequestPermissionResultContract()
+    ) { /* 상태는 SyncWorker가 실행마다 다시 확인하므로 여기서 따로 안 들고 있음 */ }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = PermissionController.createRequestPermissionResultContract()
+    ) { granted ->
+        permissionGranted = granted.containsAll(HEALTH_CONNECT_PERMISSIONS)
+        if (permissionGranted) {
+            backgroundPermissionLauncher.launch(setOf(HEALTH_CONNECT_BACKGROUND_PERMISSION))
+        }
+        if (pendingSyncAfterPermission) {
+            pendingSyncAfterPermission = false
+            if (permissionGranted) {
+                scope.launch { performSync() }
+            } else {
+                syncStatusText = "Health Connect 권한을 승인해야 동기화할 수 있어요."
+            }
+        }
+    }
+
     // 여기가 앱의 홈 화면이라, 웹뷰 안에 뒤로 갈 탐색 기록이 있을 때만
     // 시스템 뒤로가기를 가로챈다. 기록이 없으면 가로채지 않고 시스템 기본
     // 동작(앱 종료/백그라운드 전환)에 맡긴다 -- canGoBack()은 자동으로
@@ -187,36 +247,15 @@ fun WebAppScreen(
             TextButton(
                 onClick = {
                     if (syncing) return@TextButton
-                    scope.launch {
-                        syncing = true
-                        syncStatusText = "동기화 중..."
-                        // 권한이 없으면 여기서 요청 흐름을 새로 만들지 않고
-                        // PoC 화면으로 안내한다 -- 권한 요청 UI(2단계, 백그라운드
-                        // 권한 등)가 이미 그쪽에 있어서 중복으로 안 만듦.
-                        if (!healthConnectManager.hasAllPermissions()) {
-                            syncStatusText = "Health Connect 권한이 필요해요 — PoC 테스트 화면에서 먼저 허용해 주세요."
-                            syncing = false
-                            return@launch
-                        }
-                        // 오늘 기록 화면(웹)이 오늘 날짜로 조회하므로, 어제가
-                        // 아니라 오늘 자정~지금 범위로 보내야 그 화면에
-                        // 이어진다 (#143).
-                        val result = syncTodayRecord(healthConnectManager, authToken)
-                        syncStatusText = when (result) {
-                            is SyncResult.Success -> "동기화 완료 (${result.date}) — 오늘 기록 화면에서 확인해 보세요"
-                            is SyncResult.SuccessNoData -> "동기화 완료 — 오늘은 아직 기록된 측정값이 없었어요"
-                            // 만료된 토큰을 그대로 두면 이 버튼은 앞으로도 계속
-                            // 401만 낸다. 지워서 로그인 화면으로 돌려보낸다
-                            // (이 문구는 화면이 곧 교체되며 사라진다).
-                            SyncResult.Unauthorized -> {
-                                currentOnSessionEnded()
-                                "로그인이 만료됐어요 — 다시 로그인해 주세요"
-                            }
-                            is SyncResult.HttpFailure -> "동기화 실패 (HTTP ${result.code})"
-                            is SyncResult.Failure -> "동기화 실패: ${result.message}"
-                        }
-                        syncing = false
+                    if (!permissionGranted) {
+                        // 예전엔 여기서 PoC 화면으로 안내만 하고 끝났다 -- 이제
+                        // 이 화면에서 바로 실제 권한 요청을 띄우고, 승인되면
+                        // 이어서 동기화까지 진행한다(#H9).
+                        pendingSyncAfterPermission = true
+                        permissionLauncher.launch(HEALTH_CONNECT_PERMISSIONS)
+                        return@TextButton
                     }
+                    scope.launch { performSync() }
                 },
             ) {
                 Text(if (syncing) "동기화 중..." else "지금 동기화")

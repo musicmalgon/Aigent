@@ -175,6 +175,27 @@ def test_consent_types_are_independent(client: TestClient) -> None:
     }
 
 
+def test_newly_added_consent_types_grant_and_withdraw(client: TestClient) -> None:
+    """이전엔 ConsentType이 health_data/emotion_diary 2개뿐이라, 온보딩 화면의
+    나머지 3개 항목(이용약관, 개인정보 수집, 외부 서비스 연동)은 서버에 전혀
+    저장되지 않았다(#H1). 이 3개도 다른 타입과 동일하게 동작해야 한다."""
+
+    headers, _ = authenticated_user(client)
+
+    for consent_type in ("terms_of_service", "privacy_policy", "external_integration"):
+        grant(client, headers, consent_type)
+
+    assert current_status(client, headers) == {
+        "terms_of_service": "granted",
+        "privacy_policy": "granted",
+        "external_integration": "granted",
+    }
+
+    withdrawn = client.delete(f"{BASE_PATH}/external_integration", headers=headers)
+    assert withdrawn.status_code == 201
+    assert current_status(client, headers)["external_integration"] == "withdrawn"
+
+
 def test_regranting_after_withdrawal_restores_granted_status(
     client: TestClient,
 ) -> None:

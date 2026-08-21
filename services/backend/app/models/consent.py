@@ -9,8 +9,17 @@ from app.core.database import Base
 
 
 class ConsentType(str, enum.Enum):
+    # 온보딩 동의 화면(Consent.tsx) 5개 항목과 1:1로 대응한다. 예전엔 이 중
+    # health_data/emotion_diary 2개만 실제로 저장되고 나머지 3개(이용약관,
+    # 개인정보 수집, 외부 서비스 연동)는 화면 체크박스 상태로만 관리돼서,
+    # 동의내역 화면이 사용자가 실제로 고른 것과 무관하게 항상 "가입 시
+    # 동의"라고 표시했다 -- 특히 선택 항목은 체크 안 해도 그렇게 표시돼서
+    # 실제 선택과 정반대로 보였다(#H1).
+    TERMS_OF_SERVICE = "terms_of_service"
+    PRIVACY_POLICY = "privacy_policy"
     HEALTH_DATA = "health_data"
     EMOTION_DIARY = "emotion_diary"
+    EXTERNAL_INTEGRATION = "external_integration"
 
 
 class ConsentStatus(str, enum.Enum):

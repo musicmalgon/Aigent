@@ -14,6 +14,15 @@ from app.schemas.consent import ConsentGrantRequest, ConsentRecordRead
 router = APIRouter(prefix="/api/v1/consents", tags=["consents"])
 
 NO_ACTIVE_CONSENT_DETAIL = "해당 동의 항목에 대한 활성 동의가 없습니다"
+NOT_WITHDRAWABLE_DETAIL = "이 동의 항목은 철회할 수 없습니다"
+
+# 서비스 이용약관/개인정보 수집은 서비스 이용 자체의 전제조건이라 언제든
+# 껐다 켤 수 있는 다른 동의(건강 데이터 활용, 마음 기록 분석, 외부 연동)와
+# 달리 철회를 허용하지 않는다. 프론트 UI에서만 막으면 API를 직접 호출해
+# 우회할 수 있으므로 여기서도 같은 규칙을 강제한다.
+NON_WITHDRAWABLE_CONSENT_TYPES = frozenset(
+    {ConsentType.TERMS_OF_SERVICE, ConsentType.PRIVACY_POLICY}
+)
 
 
 @router.post(
@@ -69,6 +78,12 @@ def withdraw_consent(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ConsentRecord:
+    if consent_type in NON_WITHDRAWABLE_CONSENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=NOT_WITHDRAWABLE_DETAIL,
+        )
+
     latest = get_latest_consent_record(
         db,
         user_id=current_user.id,

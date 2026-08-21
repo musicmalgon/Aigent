@@ -188,6 +188,75 @@ def test_regranting_after_withdrawal_restores_granted_status(
     assert client.get(BASE_PATH, headers=headers).json() == [regranted]
 
 
+def test_grant_accepts_the_three_newly_tracked_consent_types(
+    client: TestClient,
+) -> None:
+    """가입 화면(Consent.tsx) 5개 체크박스 중 예전에는 서버로 보내지
+    않던 3개(이용약관/개인정보 수집/외부 연동)도 이제 저장돼야 한다."""
+    headers, _ = authenticated_user(client, email="consent-new-types@example.com")
+
+    for consent_type in (
+        "terms_of_service",
+        "privacy_policy",
+        "external_integration",
+    ):
+        body = grant(client, headers, consent_type)
+        assert body["consent_type"] == consent_type
+        assert body["status"] == "granted"
+
+
+def test_terms_of_service_cannot_be_withdrawn(client: TestClient) -> None:
+    headers, _ = authenticated_user(client, email="consent-tos-locked@example.com")
+    grant(client, headers, "terms_of_service")
+
+    response = client.delete(f"{BASE_PATH}/terms_of_service", headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "이 동의 항목은 철회할 수 없습니다"
+    # 실제로 상태가 바뀌지 않았는지도 확인한다 -- 403이어도 행이
+    # 추가돼 버리면 다음 조회에서 철회된 것처럼 보일 수 있다.
+    assert current_status(client, headers) == {"terms_of_service": "granted"}
+
+
+def test_privacy_policy_cannot_be_withdrawn(client: TestClient) -> None:
+    headers, _ = authenticated_user(client, email="consent-privacy-locked@example.com")
+    grant(client, headers, "privacy_policy")
+
+    response = client.delete(f"{BASE_PATH}/privacy_policy", headers=headers)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "이 동의 항목은 철회할 수 없습니다"
+
+
+def test_external_integration_can_be_withdrawn_and_regranted(
+    client: TestClient,
+) -> None:
+    """선택 동의 항목은 필수 항목과 달리 자유롭게 껐다 켤 수 있어야 한다."""
+    headers, _ = authenticated_user(client, email="consent-external@example.com")
+    grant(client, headers, "external_integration")
+
+    withdrawn = client.delete(f"{BASE_PATH}/external_integration", headers=headers)
+    assert withdrawn.status_code == 201, withdrawn.text
+    assert current_status(client, headers) == {"external_integration": "withdrawn"}
+
+    regranted = grant(client, headers, "external_integration")
+    assert regranted["status"] == "granted"
+    assert current_status(client, headers) == {"external_integration": "granted"}
+
+
+def test_health_data_and_emotion_diary_remain_freely_withdrawable(
+    client: TestClient,
+) -> None:
+    """새 규칙(필수 항목은 철회 불가)의 명시적 예외 -- 이 둘은 여전히
+    자유롭게 철회할 수 있어야 한다."""
+    headers, _ = authenticated_user(client, email="consent-exceptions@example.com")
+    grant(client, headers, "health_data")
+    grant(client, headers, "emotion_diary")
+
+    assert client.delete(f"{BASE_PATH}/health_data", headers=headers).status_code == 201
+    assert client.delete(f"{BASE_PATH}/emotion_diary", headers=headers).status_code == 201
+
+
 def test_consents_are_isolated_between_users(client: TestClient) -> None:
     owner_headers, owner = authenticated_user(client, email="owner@example.com")
     other_headers, other = authenticated_user(client, email="other@example.com")

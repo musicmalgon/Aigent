@@ -1,6 +1,12 @@
 import { apiFetch } from "./client";
 
-export type ConsentType = "health_data" | "emotion_diary";
+// app/models/consent.py의 ConsentType과 1:1.
+export type ConsentType =
+  | "health_data"
+  | "emotion_diary"
+  | "terms_of_service"
+  | "privacy_policy"
+  | "external_integration";
 export type ConsentStatus = "granted" | "withdrawn";
 
 export interface ConsentRecord {

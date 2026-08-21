@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CheckBox, OnboardingFrame } from "../components/common";
 import type { AppScreen } from "../types";
-import { grantConsent } from "../api/consents";
+import { grantConsent, type ConsentType } from "../api/consents";
 
 const CONSENT_ITEMS: [string, string][] = [
   ["서비스 이용약관", "필수"],
@@ -12,11 +12,16 @@ const CONSENT_ITEMS: [string, string][] = [
 ];
 
 // 화면 체크박스 인덱스 -> 백엔드 ConsentType 매핑.
-// 백엔드에 health_data / emotion_diary 두 종류만 있어서, 나머지 항목(이용약관/개인정보/외부연동)은
-// 서버로 보내지 않고 화면에서만 체크 상태로 관리함. 실제 매핑이 맞는지 기획/백엔드 확인 필요.
-const CONSENT_TYPE_MAP: Record<number, "health_data" | "emotion_diary"> = {
+// 예전에는 health_data/emotion_diary 두 종류만 있어서 나머지 3개 항목은
+// 체크해도 서버로 전달되지 않고 사라졌다(다음 화면으로 넘어가는 순간
+// 유실). ConsentType에 terms_of_service/privacy_policy/external_integration을
+// 추가해 5개 항목 전부 실제 동의 이력으로 남긴다.
+const CONSENT_TYPE_MAP: Record<number, ConsentType> = {
+  0: "terms_of_service",
+  1: "privacy_policy",
   2: "health_data",
   3: "emotion_diary",
+  4: "external_integration",
 };
 
 export function Consent({ go, openDetail }: { go: (screen: AppScreen) => void; openDetail: (item: string) => void }) {
@@ -32,6 +37,10 @@ export function Consent({ go, openDetail }: { go: (screen: AppScreen) => void; o
     setError(null);
     setLoading(true);
     try {
+      // 체크된 항목만 골라 각 항목의 실제 동의 상태(항목 ID + 체크 여부)를
+      // 검증한 뒤 백엔드로 보낸다. 선택 항목(외부 연동)은 체크 안 했으면
+      // 아예 요청을 보내지 않는다 -- "미동의"를 표현하려고 굳이 철회
+      // 이력을 미리 만들 필요는 없다.
       const requests = Object.entries(CONSENT_TYPE_MAP)
         .filter(([index]) => items[Number(index)])
         .map(([, consentType]) => grantConsent(consentType));

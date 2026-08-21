@@ -19,7 +19,7 @@ from .report_schemas import (
 )
 
 GEMINI_API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-DEFAULT_GEMINI_MODEL = "gemini-3.6-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-flash-lite"
 
 SYSTEM_INSTRUCTION = """\
 당신은 비의료적 생활 리포트의 한국어 문장 편집기입니다.

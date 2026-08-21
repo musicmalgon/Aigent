@@ -51,11 +51,36 @@ export function Overlay({
   // 위에서 발생해 버린다. onClick 전환만으로는 근본 원인을 없애지 못해서,
   // 열린 직후 짧은 유예 시간 동안은 배경 클릭을 아예 무시하도록 이중으로
   // 막는다.
+  //
+  // 다만 "실기기에서 오버레이가 안 뜬다"고 보고된 증상의 진짜 원인은 이게
+  // 아니었다 -- 아래 return 위 주석에 적은 CSS 뷰포트 단위(vh) 0 계산 문제였고,
+  // 오버레이는 닫힌 적이 없이 계속 열려 있었다(높이만 44px로 눌려 있었다).
+  // 이 유예 시간 자체는 무해해서 남겨 두지만, 위 "즉시 닫힘" 가설은 실측으로
+  // 확인된 원인이 아니라는 점을 기억할 것.
   function handleBackdropClick() {
     if (Date.now() - openedAtRef.current < CLOSE_GUARD_MS) return;
     onClose();
   }
 
+  // 아래 패널의 높이 제한에 vh/dvh/svh를 쓰면 안 된다. 이 앱의 안드로이드
+  // WebView(Compose AndroidView 위에 얹혀 있다)에서는 CSS 뷰포트 단위가 전부
+  // 0으로 계산된다 -- 실기기(SM-S931N, Chrome 151)에서 CDP로 측정한 결과
+  // height:300px는 300px로 정상인데 100vh / 92vh / 92dvh / 92svh /
+  // calc(100vh-40px)는 모두 0px이었다. JS의 innerHeight(601)와
+  // documentElement.clientHeight(602)는 멀쩡한데 CSS 뷰포트 단위만 0이라
+  // 데스크톱 브라우저에서는 절대 재현되지 않는다.
+  //
+  // 그래서 max-height:92vh가 max-height:0이 되어 패널 content box가 0으로
+  // 눌렸고, padding(pt-3 12px + pb-8 32px)만 남아 화면 맨 아래 44px짜리 띠로만
+  // 보였다. 내용도 데이터 로딩도 멀쩡한데(scrollHeight 725px) "오버레이가 안
+  // 뜬다"로 보이던 실제 원인이 이것이다. min-h-screen 같은 min-height 계열은
+  // 0이 되어도 내용이 그대로 흐르므로 무해해서, 다른 화면은 멀쩡한데 오버레이만
+  // 깨져 보였다.
+  //
+  // 퍼센트는 부모(fixed inset-0라 높이가 확정된 flex 컨테이너) 기준으로 정상
+  // 계산된다 -- 같은 기기에서 92% -> 554px로 확인했다. sm에서는 부모의
+  // p-5(20px*2)가 이미 여백을 만들어 주므로 max-h-full이 기존
+  // calc(100vh-40px)와 정확히 같은 값이 된다.
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-end bg-[#292826]/30 p-0 sm:p-5" role="presentation" onClick={handleBackdropClick}>
       <section
@@ -63,7 +88,7 @@ export function Overlay({
         aria-modal="true"
         aria-label={title}
         onClick={event => event.stopPropagation()}
-        className="max-h-[92vh] w-full overflow-y-auto rounded-t-[20px] bg-[#fffdf9] px-5 pb-8 pt-3 shadow-xl sm:max-h-[calc(100vh-40px)] sm:w-[480px] sm:rounded-[20px] sm:px-8 sm:py-7"
+        className="max-h-[92%] w-full overflow-y-auto rounded-t-[20px] bg-[#fffdf9] px-5 pb-8 pt-3 shadow-xl sm:max-h-full sm:w-[480px] sm:rounded-[20px] sm:px-8 sm:py-7"
       >
         <div className="mx-auto mb-5 h-1 w-9 rounded-full bg-[#d8d1c6] sm:hidden" />
         <div className="flex items-center justify-between border-b border-border pb-4">
